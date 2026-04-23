@@ -123,6 +123,19 @@ cargo test --workspace
 cargo run -p satori-indexer
 ```
 
+导入外部语料。
+
+```bash
+mkdir -p data/raw/mcsrainbow
+curl -L https://raw.githubusercontent.com/mcsrainbow/chinese-internet-jargon/master/readme.md \
+  -o data/raw/mcsrainbow/readme.md
+cargo run -p satori-indexer -- import-mcsrainbow
+```
+
+导入结果会写入 `data/processed/imported/mcsrainbow_cards.json`。
+
+`data/raw` 和 `data/processed/imported` 默认不提交。
+
 启动 API 服务。
 
 ```bash
@@ -143,6 +156,12 @@ SATORI_CARDS_PATH=tests/fixtures/cards.json cargo run -p satori-api
 
 ```bash
 cargo run -p satori-indexer -- tests/fixtures/cards.json
+```
+
+也可以校验导入结果。
+
+```bash
+cargo run -p satori-indexer -- validate data/processed/imported/mcsrainbow_cards.json
 ```
 
 检查健康状态。
@@ -174,7 +193,7 @@ tests/
 
 `crates/core` 提供检索卡片、搜索结果和基础排序逻辑。
 
-`crates/indexer` 目前提供本地语料校验命令。
+`crates/indexer` 目前提供本地语料校验和外部语料导入命令。
 
 当前搜索实现读取本地 JSON 卡片，并使用简单关键词排序。
 

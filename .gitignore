@@ -10,3 +10,4 @@ target/
 .env.*
 data/index/
 data/raw/
+data/processed/imported/
