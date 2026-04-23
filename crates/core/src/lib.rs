@@ -168,35 +168,28 @@ fn keyword_score(query: &str, card: &JargonCard) -> f32 {
 mod tests {
     use super::*;
 
+    fn fixture_cards() -> Vec<JargonCard> {
+        load_cards_from_reader(include_str!("../../../tests/fixtures/cards.json").as_bytes())
+            .expect("parse cards fixture JSON")
+    }
+
     fn card() -> JargonCard {
-        JargonCard {
-            id: "jargon_lar_tong_dui_qi".to_owned(),
-            term: "拉通对齐".to_owned(),
-            plain: "大家先统一想法".to_owned(),
-            explanation: "让相关的人先把目标、分工和时间说清楚。".to_owned(),
-            examples: vec!["这个需求先拉通对齐一下。".to_owned()],
-            queries: vec!["先把要做的事情说清楚".to_owned()],
-            tags: vec!["职场".to_owned(), "会议".to_owned()],
-            source: "manual".to_owned(),
-            verified: true,
-        }
+        fixture_cards().remove(0)
     }
 
     #[test]
     fn searchable_text_contains_card_fields() {
-        let text = card().searchable_text();
+        let card = card();
+        let text = card.searchable_text();
 
-        assert!(text.contains("拉通对齐"));
-        assert!(text.contains("大家先统一想法"));
-        assert!(text.contains("会议"));
+        assert!(text.contains(&card.term));
+        assert!(text.contains(&card.plain));
+        assert!(card.tags.iter().any(|tag| text.contains(tag)));
     }
 
     #[test]
     fn normalize_query_trims_input() {
-        assert_eq!(
-            normalize_query("  拉通对齐  ", 20),
-            Ok("拉通对齐".to_owned())
-        );
+        assert_eq!(normalize_query("  query  ", 20), Ok("query".to_owned()));
     }
 
     #[test]
@@ -215,34 +208,18 @@ mod tests {
     #[test]
     fn rank_keyword_matches_returns_expected_card() {
         let card = card();
-        let results = rank_keyword_matches("大家先统一想法", [&card], 3);
+        let results = rank_keyword_matches(&card.plain, [&card], 3);
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].id, "jargon_lar_tong_dui_qi");
+        assert_eq!(results[0].id, card.id);
     }
 
     #[test]
     fn load_cards_from_reader_reads_json_cards() {
-        let json = r#"
-            [
-              {
-                "id": "jargon_lar_tong_dui_qi",
-                "term": "拉通对齐",
-                "plain": "大家先统一想法",
-                "explanation": "让相关的人先把目标、分工和时间说清楚。",
-                "examples": ["这个需求先拉通对齐一下。"],
-                "queries": ["先把要做的事情说清楚"],
-                "tags": ["职场", "会议"],
-                "source": "manual",
-                "verified": true
-              }
-            ]
-        "#;
-
-        let cards = load_cards_from_reader(json.as_bytes()).unwrap();
+        let cards = fixture_cards();
 
         assert_eq!(cards.len(), 1);
-        assert_eq!(cards[0].term, "拉通对齐");
+        assert!(!cards[0].term.is_empty());
     }
 
     #[test]

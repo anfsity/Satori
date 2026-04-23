@@ -42,10 +42,16 @@ fn fixture_cards() -> Vec<JargonCard> {
 
 #[tokio::test]
 async fn search_endpoint_returns_expected_shape() {
+    let cards = fixture_cards();
+    let query = cards[0].plain.clone();
+    let expected_term = cards[0].term.clone();
     let response = app(AppState::new(fixture_cards()))
         .oneshot(
             Request::builder()
-                .uri("/api/search?q=大家先统一想法&limit=5")
+                .uri(format!(
+                    "/api/search?q={}&limit=5",
+                    urlencoding::encode(&query)
+                ))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -57,8 +63,8 @@ async fn search_endpoint_returns_expected_shape() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let payload: Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(payload["query"], "大家先统一想法");
+    assert_eq!(payload["query"], query);
     assert!(payload["results"].is_array());
-    assert_eq!(payload["results"][0]["term"], "拉通对齐");
+    assert_eq!(payload["results"][0]["term"], expected_term);
     assert!(payload["results"][0]["score"].is_number());
 }

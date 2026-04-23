@@ -13,7 +13,8 @@ async fn main() -> anyhow::Result<()> {
         env::var("SATORI_CARDS_PATH").unwrap_or_else(|_| DEFAULT_CARDS_PATH.to_owned());
     let cards_file =
         File::open(&cards_path).with_context(|| format!("failed to open {cards_path}"))?;
-    let cards = load_cards_from_reader(cards_file).context("failed to load jargon cards")?;
+    let cards = load_cards_from_reader(cards_file)
+        .with_context(|| format!("failed to load jargon cards from {cards_path}"))?;
     let listener = TcpListener::bind(address)
         .await
         .with_context(|| format!("failed to bind {address}"))?;
