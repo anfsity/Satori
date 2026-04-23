@@ -2,3 +2,11 @@
 .gemini
 .vscode
 DESIGN.md
+AGENTS.md
+docs/PROJECT_CONTEXT.md
+
+target/
+.env
+.env.*
+data/index/
+data/raw/
