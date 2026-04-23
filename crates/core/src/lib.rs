@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::{error::Error, fmt, io::Read};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JargonCard {
@@ -62,6 +63,39 @@ pub struct SearchResponse {
 pub enum SearchQueryError {
     Empty,
     TooLong { max_chars: usize },
+}
+
+#[derive(Debug)]
+pub enum CardLoadError {
+    Json(serde_json::Error),
+    Empty,
+}
+
+impl fmt::Display for CardLoadError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Json(error) => write!(formatter, "invalid card JSON: {error}"),
+            Self::Empty => formatter.write_str("card collection is empty"),
+        }
+    }
+}
+
+impl Error for CardLoadError {}
+
+impl From<serde_json::Error> for CardLoadError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Json(error)
+    }
+}
+
+pub fn load_cards_from_reader(reader: impl Read) -> Result<Vec<JargonCard>, CardLoadError> {
+    let cards: Vec<JargonCard> = serde_json::from_reader(reader)?;
+
+    if cards.is_empty() {
+        return Err(CardLoadError::Empty);
+    }
+
+    Ok(cards)
 }
 
 pub fn normalize_query(input: &str, max_chars: usize) -> Result<String, SearchQueryError> {
@@ -185,5 +219,45 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "jargon_lar_tong_dui_qi");
+    }
+
+    #[test]
+    fn load_cards_from_reader_reads_json_cards() {
+        let json = r#"
+            [
+              {
+                "id": "jargon_lar_tong_dui_qi",
+                "term": "拉通对齐",
+                "plain": "大家先统一想法",
+                "explanation": "让相关的人先把目标、分工和时间说清楚。",
+                "examples": ["这个需求先拉通对齐一下。"],
+                "queries": ["先把要做的事情说清楚"],
+                "tags": ["职场", "会议"],
+                "source": "manual",
+                "verified": true
+              }
+            ]
+        "#;
+
+        let cards = load_cards_from_reader(json.as_bytes()).unwrap();
+
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].term, "拉通对齐");
+    }
+
+    #[test]
+    fn load_cards_from_reader_rejects_empty_collection() {
+        assert!(matches!(
+            load_cards_from_reader("[]".as_bytes()),
+            Err(CardLoadError::Empty)
+        ));
+    }
+
+    #[test]
+    fn load_cards_from_reader_rejects_invalid_json() {
+        assert!(matches!(
+            load_cards_from_reader("not json".as_bytes()),
+            Err(CardLoadError::Json(_))
+        ));
     }
 }

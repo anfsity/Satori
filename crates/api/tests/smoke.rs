@@ -2,8 +2,10 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
 };
-use satori_api::{AppState, app, fixture_cards};
+use satori_api::{AppState, app};
+use satori_core::{JargonCard, load_cards_from_reader};
 use serde_json::Value;
+use std::{fs::File, path::PathBuf};
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -24,6 +26,18 @@ async fn health_endpoint_returns_ok_status() {
     let payload: Value = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(payload["status"], "ok");
+}
+
+fn fixture_cards() -> Vec<JargonCard> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("fixtures")
+        .join("cards.json");
+    let file = File::open(path).unwrap();
+
+    load_cards_from_reader(file).unwrap()
 }
 
 #[tokio::test]

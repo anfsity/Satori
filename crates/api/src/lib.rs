@@ -85,24 +85,6 @@ impl IntoResponse for ApiError {
     }
 }
 
-pub fn fixture_cards() -> Vec<JargonCard> {
-    vec![JargonCard {
-        id: "jargon_lar_tong_dui_qi".to_owned(),
-        term: "拉通对齐".to_owned(),
-        plain: "大家先统一想法".to_owned(),
-        explanation: "让相关的人先把目标、分工和时间说清楚。".to_owned(),
-        examples: vec!["这个需求先拉通对齐一下。".to_owned()],
-        queries: vec![
-            "大家先统一想法".to_owned(),
-            "先把要做的事情说清楚".to_owned(),
-            "几个人先同步一下".to_owned(),
-        ],
-        tags: vec!["职场".to_owned(), "会议".to_owned(), "协作".to_owned()],
-        source: "manual".to_owned(),
-        verified: true,
-    }]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,6 +93,24 @@ mod tests {
         http::{Request, StatusCode},
     };
     use tower::ServiceExt;
+
+    fn fixture_cards() -> Vec<JargonCard> {
+        vec![JargonCard {
+            id: "jargon_lar_tong_dui_qi".to_owned(),
+            term: "拉通对齐".to_owned(),
+            plain: "大家先统一想法".to_owned(),
+            explanation: "让相关的人先把目标、分工和时间说清楚。".to_owned(),
+            examples: vec!["这个需求先拉通对齐一下。".to_owned()],
+            queries: vec![
+                "大家先统一想法".to_owned(),
+                "先把要做的事情说清楚".to_owned(),
+                "几个人先同步一下".to_owned(),
+            ],
+            tags: vec!["职场".to_owned(), "会议".to_owned(), "协作".to_owned()],
+            source: "manual".to_owned(),
+            verified: true,
+        }]
+    }
 
     #[tokio::test]
     async fn health_returns_ok() {
