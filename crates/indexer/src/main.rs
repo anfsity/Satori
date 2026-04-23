@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{Context, bail};
 use satori_core::{JargonCard, load_cards_from_reader, validate_cards};
 use std::{
     collections::HashSet,
@@ -16,7 +16,8 @@ fn main() -> anyhow::Result<()> {
     match args.first().map(String::as_str) {
         Some("import-mcsrainbow") => import_mcsrainbow(&args[1..]),
         Some("validate") => validate_command(args.get(1).map(String::as_str)),
-        Some(path) => validate_command(Some(path)),
+        Some(path) if Path::new(path).exists() => validate_command(Some(path)),
+        Some(command) => bail!("unrecognized command or missing file: {command}"),
         None => validate_command(None),
     }
 }
@@ -134,6 +135,7 @@ fn imported_card_id(term: &str) -> String {
     format!("jargon_mcsrainbow_{:016x}", stable_hash(term.as_bytes()))
 }
 
+// FNV-1a 64-bit keeps imported IDs stable across platforms.
 fn stable_hash(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf29ce484222325_u64;
 
