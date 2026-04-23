@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fmt, io::Read};
+use std::{collections::HashSet, error::Error, fmt, io::Read};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JargonCard {
@@ -71,6 +71,44 @@ pub enum CardLoadError {
     Empty,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CardValidationIssue {
+    pub card_id: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CardValidationError {
+    pub issues: Vec<CardValidationIssue>,
+}
+
+impl CardValidationError {
+    fn new(issues: Vec<CardValidationIssue>) -> Self {
+        Self { issues }
+    }
+}
+
+impl fmt::Display for CardValidationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            formatter,
+            "card validation failed with {} issue(s)",
+            self.issues.len()
+        )?;
+
+        for issue in &self.issues {
+            match &issue.card_id {
+                Some(card_id) => writeln!(formatter, "- {card_id}: {}", issue.message)?,
+                None => writeln!(formatter, "- {}", issue.message)?,
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Error for CardValidationError {}
+
 impl fmt::Display for CardLoadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -103,6 +141,74 @@ pub fn load_cards_from_reader(reader: impl Read) -> Result<Vec<JargonCard>, Card
     }
 
     Ok(cards)
+}
+
+pub fn validate_cards(cards: &[JargonCard]) -> Result<(), CardValidationError> {
+    let mut issues = Vec::new();
+    let mut seen_ids = HashSet::new();
+
+    for card in cards {
+        let card_id = card_id_for_issue(card);
+
+        check_required_field(&mut issues, &card_id, "id", &card.id);
+        check_required_field(&mut issues, &card_id, "term", &card.term);
+        check_required_field(&mut issues, &card_id, "plain", &card.plain);
+        check_required_field(&mut issues, &card_id, "explanation", &card.explanation);
+        check_required_field(&mut issues, &card_id, "source", &card.source);
+
+        if !card.id.trim().is_empty() && !seen_ids.insert(card.id.trim().to_owned()) {
+            issues.push(CardValidationIssue {
+                card_id,
+                message: "duplicate id".to_owned(),
+            });
+        }
+
+        if !has_searchable_text(card) {
+            issues.push(CardValidationIssue {
+                card_id: card_id_for_issue(card),
+                message: "card has no searchable text".to_owned(),
+            });
+        }
+    }
+
+    if issues.is_empty() {
+        Ok(())
+    } else {
+        Err(CardValidationError::new(issues))
+    }
+}
+
+fn check_required_field(
+    issues: &mut Vec<CardValidationIssue>,
+    card_id: &Option<String>,
+    field: &'static str,
+    value: &str,
+) {
+    if value.trim().is_empty() {
+        issues.push(CardValidationIssue {
+            card_id: card_id.clone(),
+            message: format!("{field} is required"),
+        });
+    }
+}
+
+fn card_id_for_issue(card: &JargonCard) -> Option<String> {
+    let id = card.id.trim();
+
+    (!id.is_empty()).then(|| id.to_owned())
+}
+
+fn has_searchable_text(card: &JargonCard) -> bool {
+    [
+        card.term.as_str(),
+        card.plain.as_str(),
+        card.explanation.as_str(),
+    ]
+    .into_iter()
+    .chain(card.examples.iter().map(String::as_str))
+    .chain(card.queries.iter().map(String::as_str))
+    .chain(card.tags.iter().map(String::as_str))
+    .any(|item| !item.trim().is_empty())
 }
 
 pub fn normalize_query(input: &str, max_chars: usize) -> Result<String, SearchQueryError> {
@@ -245,5 +351,67 @@ mod tests {
             load_cards_from_reader("not json".as_bytes()),
             Err(CardLoadError::Json(_))
         ));
+    }
+
+    #[test]
+    fn validate_cards_accepts_fixture_cards() {
+        assert_eq!(validate_cards(&fixture_cards()), Ok(()));
+    }
+
+    #[test]
+    fn validate_cards_rejects_blank_required_fields() {
+        let mut card = card();
+        card.id = " ".to_owned();
+        card.term = " ".to_owned();
+
+        let error = validate_cards(&[card]).unwrap_err();
+
+        assert!(
+            error
+                .issues
+                .iter()
+                .any(|issue| issue.message == "id is required")
+        );
+        assert!(
+            error
+                .issues
+                .iter()
+                .any(|issue| issue.message == "term is required")
+        );
+    }
+
+    #[test]
+    fn validate_cards_rejects_duplicate_ids() {
+        let card = card();
+        let duplicate = card.clone();
+
+        let error = validate_cards(&[card, duplicate]).unwrap_err();
+
+        assert!(
+            error
+                .issues
+                .iter()
+                .any(|issue| issue.message == "duplicate id")
+        );
+    }
+
+    #[test]
+    fn validate_cards_rejects_cards_without_searchable_text() {
+        let mut card = card();
+        card.term.clear();
+        card.plain.clear();
+        card.explanation.clear();
+        card.examples.clear();
+        card.queries.clear();
+        card.tags.clear();
+
+        let error = validate_cards(&[card]).unwrap_err();
+
+        assert!(
+            error
+                .issues
+                .iter()
+                .any(|issue| issue.message == "card has no searchable text")
+        );
     }
 }
