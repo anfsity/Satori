@@ -85,24 +85,6 @@ impl IntoResponse for ApiError {
     }
 }
 
-pub fn fixture_cards() -> Vec<JargonCard> {
-    vec![JargonCard {
-        id: "jargon_lar_tong_dui_qi".to_owned(),
-        term: "拉通对齐".to_owned(),
-        plain: "大家先统一想法".to_owned(),
-        explanation: "让相关的人先把目标、分工和时间说清楚。".to_owned(),
-        examples: vec!["这个需求先拉通对齐一下。".to_owned()],
-        queries: vec![
-            "大家先统一想法".to_owned(),
-            "先把要做的事情说清楚".to_owned(),
-            "几个人先同步一下".to_owned(),
-        ],
-        tags: vec!["职场".to_owned(), "会议".to_owned(), "协作".to_owned()],
-        source: "manual".to_owned(),
-        verified: true,
-    }]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,7 +92,13 @@ mod tests {
         body::Body,
         http::{Request, StatusCode},
     };
+    use satori_core::load_cards_from_reader;
     use tower::ServiceExt;
+
+    fn fixture_cards() -> Vec<JargonCard> {
+        load_cards_from_reader(include_str!("../../../tests/fixtures/cards.json").as_bytes())
+            .expect("parse cards fixture JSON")
+    }
 
     #[tokio::test]
     async fn health_returns_ok() {
@@ -129,10 +117,13 @@ mod tests {
 
     #[tokio::test]
     async fn search_returns_matching_card() {
-        let response = app(AppState::new(fixture_cards()))
+        let cards = fixture_cards();
+        let query = cards[0].plain.clone();
+        let encoded_query = urlencoding::encode(&query);
+        let response = app(AppState::new(cards))
             .oneshot(
                 Request::builder()
-                    .uri("/api/search?q=大家先统一想法")
+                    .uri(format!("/api/search?q={encoded_query}"))
                     .body(Body::empty())
                     .unwrap(),
             )

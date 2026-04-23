@@ -1,0 +1,19 @@
+[
+  {
+    "id": "jargon_lar_tong_dui_qi",
+    "term": "拉通对齐",
+    "plain": "大家先统一想法",
+    "explanation": "让相关的人先把目标、分工和时间说清楚。",
+    "examples": [
+      "这个需求先拉通对齐一下。"
+    ],
+    "queries": [
+      "大家先统一想法",
+      "先把要做的事情说清楚",
+      "几个人先同步一下"
+    ],
+    "tags": ["职场", "会议", "协作"],
+    "source": "manual",
+    "verified": true
+  }
+]

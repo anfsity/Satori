@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::{error::Error, fmt, io::Read};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JargonCard {
@@ -62,6 +63,46 @@ pub struct SearchResponse {
 pub enum SearchQueryError {
     Empty,
     TooLong { max_chars: usize },
+}
+
+#[derive(Debug)]
+pub enum CardLoadError {
+    Json(serde_json::Error),
+    Empty,
+}
+
+impl fmt::Display for CardLoadError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Json(error) => write!(formatter, "invalid card JSON: {error}"),
+            Self::Empty => formatter.write_str("card collection is empty"),
+        }
+    }
+}
+
+impl Error for CardLoadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Json(error) => Some(error),
+            Self::Empty => None,
+        }
+    }
+}
+
+impl From<serde_json::Error> for CardLoadError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Json(error)
+    }
+}
+
+pub fn load_cards_from_reader(reader: impl Read) -> Result<Vec<JargonCard>, CardLoadError> {
+    let cards: Vec<JargonCard> = serde_json::from_reader(reader)?;
+
+    if cards.is_empty() {
+        return Err(CardLoadError::Empty);
+    }
+
+    Ok(cards)
 }
 
 pub fn normalize_query(input: &str, max_chars: usize) -> Result<String, SearchQueryError> {
@@ -134,35 +175,28 @@ fn keyword_score(query: &str, card: &JargonCard) -> f32 {
 mod tests {
     use super::*;
 
+    fn fixture_cards() -> Vec<JargonCard> {
+        load_cards_from_reader(include_str!("../../../tests/fixtures/cards.json").as_bytes())
+            .expect("parse cards fixture JSON")
+    }
+
     fn card() -> JargonCard {
-        JargonCard {
-            id: "jargon_lar_tong_dui_qi".to_owned(),
-            term: "拉通对齐".to_owned(),
-            plain: "大家先统一想法".to_owned(),
-            explanation: "让相关的人先把目标、分工和时间说清楚。".to_owned(),
-            examples: vec!["这个需求先拉通对齐一下。".to_owned()],
-            queries: vec!["先把要做的事情说清楚".to_owned()],
-            tags: vec!["职场".to_owned(), "会议".to_owned()],
-            source: "manual".to_owned(),
-            verified: true,
-        }
+        fixture_cards().remove(0)
     }
 
     #[test]
     fn searchable_text_contains_card_fields() {
-        let text = card().searchable_text();
+        let card = card();
+        let text = card.searchable_text();
 
-        assert!(text.contains("拉通对齐"));
-        assert!(text.contains("大家先统一想法"));
-        assert!(text.contains("会议"));
+        assert!(text.contains(&card.term));
+        assert!(text.contains(&card.plain));
+        assert!(card.tags.iter().any(|tag| text.contains(tag)));
     }
 
     #[test]
     fn normalize_query_trims_input() {
-        assert_eq!(
-            normalize_query("  拉通对齐  ", 20),
-            Ok("拉通对齐".to_owned())
-        );
+        assert_eq!(normalize_query("  query  ", 20), Ok("query".to_owned()));
     }
 
     #[test]
@@ -181,9 +215,35 @@ mod tests {
     #[test]
     fn rank_keyword_matches_returns_expected_card() {
         let card = card();
-        let results = rank_keyword_matches("大家先统一想法", [&card], 3);
+        let results = rank_keyword_matches(&card.plain, [&card], 3);
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].id, "jargon_lar_tong_dui_qi");
+        assert_eq!(results[0].id, card.id);
+    }
+
+    #[test]
+    fn load_cards_from_reader_reads_json_cards() {
+        let cards = fixture_cards();
+        let first = cards.first().expect("fixture should contain cards");
+
+        assert!(!first.id.is_empty());
+        assert!(!first.term.is_empty());
+        assert!(!first.plain.is_empty());
+    }
+
+    #[test]
+    fn load_cards_from_reader_rejects_empty_collection() {
+        assert!(matches!(
+            load_cards_from_reader("[]".as_bytes()),
+            Err(CardLoadError::Empty)
+        ));
+    }
+
+    #[test]
+    fn load_cards_from_reader_rejects_invalid_json() {
+        assert!(matches!(
+            load_cards_from_reader("not json".as_bytes()),
+            Err(CardLoadError::Json(_))
+        ));
     }
 }

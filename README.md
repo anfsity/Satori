@@ -31,7 +31,7 @@ Satori 是一个中文黑话和网络梗语义搜索项目。
 
 当前版本先打通 API、数据结构和测试链路。
 
-搜索接口现在使用固定 fixture 数据和简单关键词排序。
+搜索接口现在读取本地 JSON 卡片，并使用简单关键词排序。
 
 ## 数据卡片
 
@@ -125,6 +125,14 @@ cargo run -p satori-api
 
 默认监听地址是 `127.0.0.1:3000`。
 
+默认语料路径是 `data/processed/cards.json`。
+
+可以用 `SATORI_CARDS_PATH` 指定其他 JSON 文件。
+
+```bash
+SATORI_CARDS_PATH=tests/fixtures/cards.json cargo run -p satori-api
+```
+
 检查健康状态。
 
 ```bash
@@ -156,7 +164,7 @@ tests/
 
 `crates/indexer` 目前保留为索引构建入口。
 
-当前搜索实现使用固定 fixture 数据和简单关键词排序。
+当前搜索实现读取本地 JSON 卡片，并使用简单关键词排序。
 
 ## 当前状态
 
