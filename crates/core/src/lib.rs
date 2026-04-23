@@ -224,9 +224,11 @@ mod tests {
     #[test]
     fn load_cards_from_reader_reads_json_cards() {
         let cards = fixture_cards();
+        let first = cards.first().expect("fixture should contain cards");
 
-        assert_eq!(cards.len(), 1);
-        assert!(!cards[0].term.is_empty());
+        assert!(!first.id.is_empty());
+        assert!(!first.term.is_empty());
+        assert!(!first.plain.is_empty());
     }
 
     #[test]

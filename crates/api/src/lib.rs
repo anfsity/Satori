@@ -119,10 +119,11 @@ mod tests {
     async fn search_returns_matching_card() {
         let cards = fixture_cards();
         let query = cards[0].plain.clone();
-        let response = app(AppState::new(fixture_cards()))
+        let encoded_query = urlencoding::encode(&query);
+        let response = app(AppState::new(cards))
             .oneshot(
                 Request::builder()
-                    .uri(format!("/api/search?q={query}"))
+                    .uri(format!("/api/search?q={encoded_query}"))
                     .body(Body::empty())
                     .unwrap(),
             )
