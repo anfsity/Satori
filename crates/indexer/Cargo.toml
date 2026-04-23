@@ -7,3 +7,4 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+satori-core = { path = "../core" }

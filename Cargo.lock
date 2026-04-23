@@ -310,6 +310,7 @@ name = "satori-indexer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "satori-core",
 ]
 
 [[package]]

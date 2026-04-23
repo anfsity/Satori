@@ -117,6 +117,12 @@ GET /api/health
 cargo test --workspace
 ```
 
+校验本地语料。
+
+```bash
+cargo run -p satori-indexer
+```
+
 启动 API 服务。
 
 ```bash
@@ -131,6 +137,12 @@ cargo run -p satori-api
 
 ```bash
 SATORI_CARDS_PATH=tests/fixtures/cards.json cargo run -p satori-api
+```
+
+也可以让校验命令读取指定文件。
+
+```bash
+cargo run -p satori-indexer -- tests/fixtures/cards.json
 ```
 
 检查健康状态。
@@ -162,7 +174,7 @@ tests/
 
 `crates/core` 提供检索卡片、搜索结果和基础排序逻辑。
 
-`crates/indexer` 目前保留为索引构建入口。
+`crates/indexer` 目前提供本地语料校验命令。
 
 当前搜索实现读取本地 JSON 卡片，并使用简单关键词排序。
 
