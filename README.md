@@ -1,9 +1,8 @@
 # Satori
 
-[![status](https://img.shields.io/badge/status-planning-blue)](https://github.com/anfsity/Satori)
+[![status](https://img.shields.io/badge/status-early%20development-blue)](https://github.com/anfsity/Satori)
 [![backend](https://img.shields.io/badge/backend-Rust-orange)](https://www.rust-lang.org/)
-[![search](https://img.shields.io/badge/search-LanceDB-green)](https://lancedb.github.io/lancedb/)
-[![model](https://img.shields.io/badge/model-bge--small--zh--v1.5-lightgrey)](https://huggingface.co/BAAI/bge-small-zh-v1.5)
+[![api](https://img.shields.io/badge/api-Axum-green)](https://github.com/tokio-rs/axum)
 
 Satori 是一个中文黑话和网络梗语义搜索项目。
 
@@ -26,18 +25,13 @@ Satori 是一个中文黑话和网络梗语义搜索项目。
 | 后端语言 | Rust | 主服务和索引工具都使用 Rust |
 | Web 框架 | Axum | 提供 HTTP API |
 | 异步运行时 | tokio | 负责异步任务 |
-| 向量模型 | bge-small-zh-v1.5 | 用于中文语义向量 |
-| 推理引擎 | Candle | 减少 Python 运行时依赖 |
-| 向量库 | LanceDB | 本地向量索引 |
-| 分词器 | HuggingFace Tokenizers | 使用模型配套词表 |
+| 序列化 | serde | 处理请求和响应结构 |
 
-## 工作方式
+## 当前工作方式
 
-Satori 不直接用关键词匹配。
+当前版本先打通 API、数据结构和测试链路。
 
-系统会先把词条、解释、例句和常见问法整理成检索卡片，再把卡片转成向量写入索引。
-
-查询时，用户输入会转成查询向量。系统从索引中找出语义接近的卡片，再返回最相关的结果。
+搜索接口现在使用固定 fixture 数据和简单关键词排序。
 
 ## 数据卡片
 
@@ -60,7 +54,7 @@ Satori 不直接用关键词匹配。
 }
 ```
 
-向量文本由 `term`、`plain`、`explanation`、`examples` 和 `queries` 组成。
+检索文本由 `term`、`plain`、`explanation`、`examples` 和 `queries` 组成。
 
 这样用户输入白话时，也能查到对应的黑话。
 
@@ -162,12 +156,8 @@ tests/
 
 `crates/indexer` 目前保留为索引构建入口。
 
-当前搜索实现使用固定 fixture 数据和简单关键词排序，用来先打通 API、数据结构和测试链路。
-
-真实的向量推理、LanceDB 写入和语料导入流程会在后续迭代中接入。
+当前搜索实现使用固定 fixture 数据和简单关键词排序。
 
 ## 当前状态
 
 项目处于早期开发阶段。
-
-更多设计细节见 [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md)。
