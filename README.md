@@ -143,6 +143,29 @@ curl http://127.0.0.1:3000/api/health
 curl "http://127.0.0.1:3000/api/search?q=大家先统一想法"
 ```
 
+## 当前实现
+
+当前仓库已经包含一个可运行的 Rust workspace。
+
+```text
+crates/
+  api/
+  core/
+  indexer/
+tests/
+  fixtures/
+```
+
+`crates/api` 提供 HTTP 接口。
+
+`crates/core` 提供检索卡片、搜索结果和基础排序逻辑。
+
+`crates/indexer` 目前保留为索引构建入口。
+
+当前搜索实现使用固定 fixture 数据和简单关键词排序，用来先打通 API、数据结构和测试链路。
+
+真实的向量推理、LanceDB 写入和语料导入流程会在后续迭代中接入。
+
 ## 当前状态
 
 项目处于早期开发阶段。
