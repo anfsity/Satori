@@ -80,7 +80,14 @@ impl fmt::Display for CardLoadError {
     }
 }
 
-impl Error for CardLoadError {}
+impl Error for CardLoadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Json(error) => Some(error),
+            Self::Empty => None,
+        }
+    }
+}
 
 impl From<serde_json::Error> for CardLoadError {
     fn from(error: serde_json::Error) -> Self {
