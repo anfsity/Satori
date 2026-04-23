@@ -115,6 +115,34 @@ GET /api/health
 }
 ```
 
+## 本地开发
+
+运行测试。
+
+```bash
+cargo test --workspace
+```
+
+启动 API 服务。
+
+```bash
+cargo run -p satori-api
+```
+
+默认监听地址是 `127.0.0.1:3000`。
+
+检查健康状态。
+
+```bash
+curl http://127.0.0.1:3000/api/health
+```
+
+发起搜索请求。
+
+```bash
+curl "http://127.0.0.1:3000/api/search?q=大家先统一想法"
+```
+
 ## 当前状态
 
 项目处于早期开发阶段。
