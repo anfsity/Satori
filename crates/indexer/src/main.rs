@@ -29,7 +29,7 @@ fn main() -> anyhow::Result<()> {
 fn validate_command(path: Option<&str>) -> anyhow::Result<()> {
     let cards_path = path.unwrap_or(DEFAULT_CARDS_PATH);
     let cards_file =
-        File::open(&cards_path).with_context(|| format!("failed to open {cards_path}"))?;
+        File::open(cards_path).with_context(|| format!("failed to open {cards_path}"))?;
     let cards = load_cards_from_reader(cards_file)
         .with_context(|| format!("failed to load jargon cards from {cards_path}"))?;
 
