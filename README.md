@@ -91,7 +91,7 @@ GET /api/search?q=大家先统一想法&limit=10
       "explanation": "让相关的人先把目标、分工和时间说清楚。",
       "examples": ["这个需求先拉通对齐一下。"],
       "tags": ["职场", "会议", "协作"],
-      "score": 0.82
+      "score": 1.0
     }
   ]
 }
