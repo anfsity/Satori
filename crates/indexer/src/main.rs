@@ -1,9 +1,12 @@
 use anyhow::{Context, bail};
-use satori_core::{JargonCard, load_cards_from_reader, validate_cards};
+use satori_core::{
+    IndexDocument, JargonCard, build_index_documents, load_cards_from_reader, validate_cards,
+};
 use std::{
     collections::HashSet,
     env,
     fs::{self, File},
+    io::{BufWriter, Write},
     path::Path,
 };
 
@@ -15,6 +18,7 @@ fn main() -> anyhow::Result<()> {
 
     match args.first().map(String::as_str) {
         Some("import-mcsrainbow") => import_mcsrainbow(&args[1..]),
+        Some("export-index-docs") => export_index_docs_command(&args[1..]),
         Some("validate") => validate_command(args.get(1).map(String::as_str)),
         Some(path) if Path::new(path).exists() => validate_command(Some(path)),
         Some(command) => bail!("unrecognized command or missing file: {command}"),
@@ -55,6 +59,33 @@ fn import_mcsrainbow(args: &[String]) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn export_index_docs_command(args: &[String]) -> anyhow::Result<()> {
+    let input_path = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_CARDS_PATH);
+    let output_path = args
+        .get(1)
+        .map(String::as_str)
+        .unwrap_or("data/processed/index_docs.jsonl");
+    let cards = load_cards(input_path)?;
+    let documents = build_index_documents(&cards);
+
+    write_index_documents(output_path, &documents)?;
+    println!(
+        "exported {} index document(s) into {output_path}",
+        documents.len()
+    );
+
+    Ok(())
+}
+
+fn load_cards(path: &str) -> anyhow::Result<Vec<JargonCard>> {
+    let cards_file = File::open(path).with_context(|| format!("failed to open {path}"))?;
+    load_cards_from_reader(cards_file)
+        .with_context(|| format!("failed to load jargon cards from {path}"))
+}
+
 fn write_cards(path: &str, cards: &[JargonCard]) -> anyhow::Result<()> {
     if let Some(parent) = Path::new(path).parent() {
         fs::create_dir_all(parent)
@@ -66,6 +97,34 @@ fn write_cards(path: &str, cards: &[JargonCard]) -> anyhow::Result<()> {
 
     fs::write(&temp_path, format!("{json}\n"))
         .with_context(|| format!("failed to write {temp_path}"))?;
+    fs::rename(&temp_path, path)
+        .with_context(|| format!("failed to move {temp_path} to {path}"))?;
+
+    Ok(())
+}
+
+fn write_index_documents(path: &str, documents: &[IndexDocument]) -> anyhow::Result<()> {
+    if let Some(parent) = Path::new(path).parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+
+    let temp_path = format!("{path}.tmp");
+    let temp_file =
+        File::create(&temp_path).with_context(|| format!("failed to create {temp_path}"))?;
+    let mut writer = BufWriter::new(temp_file);
+
+    for document in documents {
+        serde_json::to_writer(&mut writer, document)
+            .context("failed to serialize index document")?;
+        writer
+            .write_all(b"\n")
+            .with_context(|| format!("failed to write {temp_path}"))?;
+    }
+
+    writer
+        .flush()
+        .with_context(|| format!("failed to flush {temp_path}"))?;
     fs::rename(&temp_path, path)
         .with_context(|| format!("failed to move {temp_path} to {path}"))?;
 
@@ -237,6 +296,7 @@ fn stable_hash(bytes: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn parse_mcsrainbow_markdown_imports_explanation_lines() {
@@ -315,5 +375,36 @@ mod tests {
     fn imported_card_id_is_stable() {
         assert_eq!(imported_card_id("赋能"), imported_card_id("赋能"));
         assert_ne!(imported_card_id("赋能"), imported_card_id("闭环"));
+    }
+
+    #[test]
+    fn write_index_documents_writes_jsonl_rows() {
+        let cards =
+            load_cards_from_reader(include_str!("../../../tests/fixtures/cards.json").as_bytes())
+                .unwrap();
+        let documents = build_index_documents(&cards);
+        let temp_path = unique_temp_path("index-docs.jsonl");
+
+        write_index_documents(temp_path.to_str().unwrap(), &documents).unwrap();
+
+        let contents = fs::read_to_string(&temp_path).unwrap();
+        let lines = contents.lines().collect::<Vec<_>>();
+
+        assert_eq!(lines.len(), documents.len());
+
+        let first: IndexDocument = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(first.id, "jargon_lar_tong_dui_qi");
+        assert!(first.content.contains("term: 拉通对齐"));
+
+        fs::remove_file(temp_path).unwrap();
+    }
+
+    fn unique_temp_path(name: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        env::temp_dir().join(format!("satori-{nanos}-{name}"))
     }
 }
