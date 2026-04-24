@@ -97,13 +97,15 @@ fn parse_mcsrainbow_markdown(markdown: &str) -> Vec<JargonCard> {
             continue;
         }
 
+        let normalized_text = normalize_imported_text(&explanation);
+
         cards.push(JargonCard {
             id: imported_card_id(&term),
             term,
-            plain: explanation.clone(),
-            explanation: explanation.clone(),
+            plain: normalized_text.plain,
+            explanation: normalized_text.explanation,
             examples: Vec::new(),
-            queries: vec![explanation],
+            queries: normalized_text.queries,
             tags: vec!["external".to_owned(), "jargon".to_owned()],
             source: DEFAULT_SOURCE.to_owned(),
             verified: false,
@@ -129,6 +131,91 @@ fn parse_explanation_line(line: &str) -> Option<(String, String)> {
     }
 
     Some((term.to_owned(), explanation.to_owned()))
+}
+
+/// Normalized explanation payload derived from one imported external corpus entry.
+struct NormalizedImportedText {
+    plain: String,
+    explanation: String,
+    queries: Vec<String>,
+}
+
+/// Cleans imported explanation text and derives imported searchable fields.
+fn normalize_imported_text(raw: &str) -> NormalizedImportedText {
+    let segments = split_imported_segments(raw);
+    let plain = segments
+        .first()
+        .cloned()
+        .unwrap_or_else(|| raw.trim().to_owned());
+    let explanation = segments.join("；");
+
+    NormalizedImportedText {
+        plain,
+        explanation,
+        queries: segments,
+    }
+}
+
+/// Splits an imported explanation into stable searchable segments.
+fn split_imported_segments(raw: &str) -> Vec<String> {
+    let normalized = raw.replace('／', " / ");
+    let mut segments = Vec::new();
+    let mut seen = HashSet::new();
+
+    for segment in normalized.split(" / ") {
+        let cleaned = normalize_imported_segment(segment);
+
+        if cleaned.is_empty() || !seen.insert(cleaned.clone()) {
+            continue;
+        }
+
+        segments.push(cleaned);
+    }
+
+    if segments.is_empty() {
+        vec![normalize_imported_segment(raw)]
+    } else {
+        segments
+    }
+}
+
+/// Cleans one imported explanation segment without changing its meaning.
+fn normalize_imported_segment(raw: &str) -> String {
+    collapse_whitespace(strip_leading_pronunciation(raw))
+}
+
+/// Removes a wrapped pronunciation prefix from the start of an imported segment.
+fn strip_leading_pronunciation(raw: &str) -> &str {
+    strip_wrapped_pronunciation(raw, '(', ')')
+        .or_else(|| strip_wrapped_pronunciation(raw, '（', '）'))
+        .unwrap_or(raw)
+}
+
+/// Returns the remaining text when a wrapped pronunciation prefix is detected.
+fn strip_wrapped_pronunciation(raw: &str, open: char, close: char) -> Option<&str> {
+    let trimmed = raw.trim();
+    let rest = trimmed.strip_prefix(open)?;
+    let end = rest.find(close)?;
+    let pronunciation = &rest[..end];
+
+    if !looks_like_pronunciation(pronunciation) {
+        return None;
+    }
+
+    Some(rest[end + close.len_utf8()..].trim())
+}
+
+/// Checks whether a wrapped prefix looks like pronunciation rather than content.
+fn looks_like_pronunciation(raw: &str) -> bool {
+    !raw.is_empty()
+        && raw.chars().all(|item| {
+            item.is_alphabetic() || item.is_whitespace() || matches!(item, '-' | '\'' | '·')
+        })
+}
+
+/// Collapses repeated whitespace so imported text stays deterministic.
+fn collapse_whitespace(raw: &str) -> String {
+    raw.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn imported_card_id(term: &str) -> String {
@@ -167,6 +254,7 @@ mod tests {
         assert_eq!(cards.len(), 2);
         assert_eq!(cards[0].term, "赋能");
         assert_eq!(cards[0].plain, "提供帮助或支持。");
+        assert_eq!(cards[0].queries, vec!["提供帮助或支持。"]);
         assert!(!cards[0].verified);
     }
 
@@ -182,6 +270,45 @@ mod tests {
 
         assert_eq!(cards.len(), 1);
         assert_eq!(cards[0].plain, "提供帮助或支持。");
+    }
+
+    #[test]
+    fn parse_mcsrainbow_markdown_strips_pronunciation_prefixes() {
+        let markdown = r#"
+# 词汇解释
+阈值 - (yù zhí)触发某种状态变化的临界点
+"#;
+
+        let cards = parse_mcsrainbow_markdown(markdown);
+
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].plain, "触发某种状态变化的临界点");
+        assert_eq!(cards[0].explanation, "触发某种状态变化的临界点");
+        assert_eq!(cards[0].queries, vec!["触发某种状态变化的临界点"]);
+    }
+
+    #[test]
+    fn parse_mcsrainbow_markdown_splits_multi_meaning_explanations() {
+        let markdown = r#"
+# 词汇解释
+矩阵 - 多渠道规模化的产品或服务组合 / 有m行n列二维数组元素的矩形阵列
+"#;
+
+        let cards = parse_mcsrainbow_markdown(markdown);
+
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].plain, "多渠道规模化的产品或服务组合");
+        assert_eq!(
+            cards[0].explanation,
+            "多渠道规模化的产品或服务组合；有m行n列二维数组元素的矩形阵列"
+        );
+        assert_eq!(
+            cards[0].queries,
+            vec![
+                "多渠道规模化的产品或服务组合",
+                "有m行n列二维数组元素的矩形阵列"
+            ]
+        );
     }
 
     #[test]
