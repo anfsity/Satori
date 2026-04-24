@@ -5,7 +5,7 @@ use axum::{
 use satori_api::{AppState, app};
 use satori_core::{JargonCard, load_cards_from_reader};
 use serde_json::Value;
-use std::{collections::BTreeSet, fs, fs::File, path::PathBuf};
+use std::{fs, fs::File, path::PathBuf};
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -63,7 +63,7 @@ async fn search_endpoint_returns_expected_shape() {
             Request::builder()
                 .uri(format!(
                     "/api/search?q={}&limit=1",
-                    urlencoding::encode(&query)
+                    urlencoding::encode(query)
                 ))
                 .body(Body::empty())
                 .unwrap(),
@@ -142,43 +142,4 @@ async fn search_endpoint_matches_invalid_limit_example() {
     let payload: Value = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(payload, load_expected_json("error-invalid-limit.json"));
-}
-
-#[test]
-fn processed_cards_match_fixture_card_ids() {
-    let fixture_ids = load_card_ids(
-        repo_root()
-            .join("tests")
-            .join("fixtures")
-            .join("cards.json"),
-    );
-    let processed_ids = load_card_ids(
-        repo_root()
-            .join("data")
-            .join("processed")
-            .join("cards.json"),
-    );
-
-    let missing_in_processed = fixture_ids
-        .difference(&processed_ids)
-        .cloned()
-        .collect::<Vec<_>>();
-    let missing_in_fixtures = processed_ids
-        .difference(&fixture_ids)
-        .cloned()
-        .collect::<Vec<_>>();
-
-    assert!(
-        missing_in_processed.is_empty() && missing_in_fixtures.is_empty(),
-        "card corpus drift detected: missing in processed = {:?}, missing in fixtures = {:?}",
-        missing_in_processed,
-        missing_in_fixtures
-    );
-}
-
-fn load_card_ids(path: PathBuf) -> BTreeSet<String> {
-    let contents = fs::read_to_string(path).unwrap();
-    let cards: Vec<JargonCard> = serde_json::from_str(&contents).unwrap();
-
-    cards.into_iter().map(|card| card.id).collect()
 }

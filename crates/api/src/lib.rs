@@ -6,8 +6,8 @@ use axum::{
     routing::get,
 };
 use satori_core::{JargonCard, SearchResponse, normalize_query, rank_keyword_matches};
-use serde::Serialize;
-use std::{collections::HashMap, sync::Arc};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 const DEFAULT_LIMIT: usize = 10;
 const MAX_LIMIT: usize = 50;
@@ -48,16 +48,19 @@ struct ErrorResponse {
     message: &'static str,
 }
 
+#[derive(Debug, Deserialize)]
+struct SearchParams {
+    q: Option<String>,
+    limit: Option<String>,
+}
+
 async fn search(
     State(state): State<AppState>,
-    Query(params): Query<HashMap<String, String>>,
+    Query(params): Query<SearchParams>,
 ) -> Result<Json<SearchResponse>, ApiError> {
-    let query = normalize_query(
-        params.get("q").map(String::as_str).unwrap_or_default(),
-        MAX_QUERY_CHARS,
-    )
-    .map_err(ApiError::from_query_error)?;
-    let limit = parse_limit(params.get("limit").map(String::as_str))?;
+    let query = normalize_query(params.q.as_deref().unwrap_or_default(), MAX_QUERY_CHARS)
+        .map_err(ApiError::from_query_error)?;
+    let limit = parse_limit(params.limit.as_deref())?;
     let results = rank_keyword_matches(&query, state.cards.iter(), limit);
 
     Ok(Json(SearchResponse { query, results }))
@@ -67,8 +70,8 @@ fn parse_limit(input: Option<&str>) -> Result<usize, ApiError> {
     match input {
         None => Ok(DEFAULT_LIMIT),
         Some(raw) => raw
-            .parse::<usize>()
-            .map(|limit| limit.clamp(1, MAX_LIMIT))
+            .parse::<i64>()
+            .map(|limit| limit.clamp(1, MAX_LIMIT as i64) as usize)
             .map_err(|_| ApiError::invalid_limit()),
     }
 }
@@ -93,7 +96,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             error: "invalid_limit",
-            message: "limit must be an integer between 1 and 50",
+            message: "limit must be an integer value",
         }
     }
 }
@@ -218,5 +221,25 @@ mod tests {
         let payload: Value = serde_json::from_slice(&body).unwrap();
 
         assert_eq!(payload["error"], "invalid_limit");
+    }
+
+    #[tokio::test]
+    async fn search_clamps_negative_limit_to_one() {
+        let response = app(AppState::new(fixture_cards()))
+            .oneshot(
+                Request::builder()
+                    .uri("/api/search?q=%E5%A4%A7%E5%AE%B6%E5%85%88%E7%BB%9F%E4%B8%80%E6%83%B3%E6%B3%95&limit=-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(payload["results"].as_array().unwrap().len(), 1);
     }
 }
