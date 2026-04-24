@@ -26,6 +26,41 @@ impl JargonCard {
         ]
         .join(" ")
     }
+
+    pub fn index_document(&self) -> IndexDocument {
+        IndexDocument::from_card(self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexDocument {
+    pub id: String,
+    pub term: String,
+    pub plain: String,
+    pub explanation: String,
+    pub tags: Vec<String>,
+    pub source: String,
+    pub verified: bool,
+    pub content: String,
+}
+
+impl IndexDocument {
+    pub fn from_card(card: &JargonCard) -> Self {
+        Self {
+            id: card.id.clone(),
+            term: card.term.clone(),
+            plain: card.plain.clone(),
+            explanation: card.explanation.clone(),
+            tags: card.tags.clone(),
+            source: card.source.clone(),
+            verified: card.verified,
+            content: build_index_content(card),
+        }
+    }
+}
+
+pub fn build_index_documents(cards: &[JargonCard]) -> Vec<IndexDocument> {
+    cards.iter().map(JargonCard::index_document).collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -211,6 +246,37 @@ fn has_searchable_text(card: &JargonCard) -> bool {
     .any(|item| !item.trim().is_empty())
 }
 
+fn build_index_content(card: &JargonCard) -> String {
+    let mut sections = vec![
+        format!("term: {}", card.term.trim()),
+        format!("plain: {}", card.plain.trim()),
+        format!("explanation: {}", card.explanation.trim()),
+    ];
+
+    if !card.examples.is_empty() {
+        sections.push(format!("examples: {}", join_non_empty(&card.examples)));
+    }
+
+    if !card.queries.is_empty() {
+        sections.push(format!("queries: {}", join_non_empty(&card.queries)));
+    }
+
+    if !card.tags.is_empty() {
+        sections.push(format!("tags: {}", join_non_empty(&card.tags)));
+    }
+
+    sections.join("\n")
+}
+
+fn join_non_empty(items: &[String]) -> String {
+    items
+        .iter()
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
 pub fn normalize_query(input: &str, max_chars: usize) -> Result<String, SearchQueryError> {
     let query = input.trim();
 
@@ -298,6 +364,20 @@ mod tests {
         assert!(text.contains(&card.term));
         assert!(text.contains(&card.plain));
         assert!(card.tags.iter().any(|tag| text.contains(tag)));
+    }
+
+    #[test]
+    fn index_document_contains_stable_content_sections() {
+        let card = card();
+        let document = card.index_document();
+
+        assert_eq!(document.id, card.id);
+        assert!(document.content.contains("term: "));
+        assert!(document.content.contains("plain: "));
+        assert!(document.content.contains("explanation: "));
+        assert!(document.content.contains("examples: "));
+        assert!(document.content.contains("queries: "));
+        assert!(document.content.contains("tags: "));
     }
 
     #[test]
