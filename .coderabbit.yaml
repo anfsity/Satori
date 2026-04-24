@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  review_details: false
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 5
+    ignore_title_keywords:
+      - "WIP"
+      - "[skip review]"
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+    labels:
+      - "!do-not-review"
+  path_filters:
+    - "!data/raw/**"
+    - "!data/index/**"
+    - "!data/processed/imported/**"
+    - "!docs/presentation.pdf"
+  path_instructions:
+    - path: "crates/api/**"
+      instructions: |
+        Review for API contract stability, parameter validation, and backward-compatible JSON responses.
+        Flag accidental changes to HTTP paths, error payloads, or search response field names.
+    - path: "crates/core/**"
+      instructions: |
+        Focus on correctness of ranking, card validation, and deterministic behavior.
+        Flag logic that could make search results unstable across the same fixture input.
+    - path: "crates/indexer/**"
+      instructions: |
+        Focus on import reproducibility, validation coverage, and filesystem safety.
+        Flag changes that make imported card IDs unstable or that silently accept invalid data.
+    - path: "tests/**"
+      instructions: |
+        Ensure tests describe stable behavior and cover happy paths plus important invalid input cases.
+        Prefer deterministic fixtures over broad or brittle assertions.
+    - path: "docs/**/*.md"
+      instructions: |
+        Check for clarity, accuracy, and consistency with the current repository behavior.
+        Flag outdated status, stale timelines, or instructions that no longer match the codebase.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+
+chat:
+  auto_reply: true

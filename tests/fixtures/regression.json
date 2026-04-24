@@ -2,5 +2,17 @@
   {
     "query": "大家先统一想法",
     "expected_ids": ["jargon_lar_tong_dui_qi"]
+  },
+  {
+    "query": "认真总结哪里出了问题",
+    "expected_ids": ["jargon_fu_pan"]
+  },
+  {
+    "query": "故意搞点节目效果",
+    "expected_ids": ["meme_zheng_huo"]
+  },
+  {
+    "query": "心态崩了",
+    "expected_ids": ["meme_po_fang_le"]
   }
 ]
