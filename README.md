@@ -29,11 +29,9 @@ Satori 是一个中文黑话和网络梗语义搜索项目。
 
 ## 当前工作方式
 
-当前版本已经打通 API、数据结构、回归测试和最小 CI 链路。
+当前版本先打通 API、数据结构和测试链路。
 
-前端由 Gemini 负责，当前仓库重点维护后端、数据、测试、文档和接口契约。
-
-搜索接口当前读取本地 JSON 卡片，并使用简单关键词排序。
+搜索接口现在读取本地 JSON 卡片，并使用简单关键词排序。
 
 ## 数据卡片
 
@@ -138,8 +136,6 @@ cargo run -p satori-indexer -- import-mcsrainbow
 
 `data/raw` 和 `data/processed/imported` 默认不提交。
 
-提交到仓库的稳定语料目前保留在 `data/processed/cards.json`，用于本地运行和固定回归检查。
-
 启动 API 服务。
 
 ```bash
@@ -180,12 +176,6 @@ curl http://127.0.0.1:3000/api/health
 curl "http://127.0.0.1:3000/api/search?q=大家先统一想法"
 ```
 
-查看 API 契约文档。
-
-```bash
-sed -n '1,220p' "docs/2. API 契约.md"
-```
-
 ## 当前实现
 
 当前仓库已经包含一个可运行的 Rust workspace。
@@ -205,21 +195,8 @@ tests/
 
 `crates/indexer` 目前提供本地语料校验和外部语料导入命令。
 
-`.github/workflows/ci.yml` 提供格式检查和 workspace 测试。
-
-`.coderabbit.yaml` 为 CodeRabbit 提供路径过滤和仓库内评审说明。
-
 当前搜索实现读取本地 JSON 卡片，并使用简单关键词排序。
-
-当前固定夹具包含多条人工确认词条，用于 smoke test 和 regression test。
 
 ## 当前状态
 
-项目仍处于早期开发阶段，但已经具备：
-
-1. 本地 JSON 语料加载与校验。
-2. 外部黑话语料导入命令。
-3. 搜索 API 与前端联调契约。
-4. smoke test、regression test 和最小 CI。
-
-下一阶段重点是扩充稳定语料、提升回归覆盖，并逐步替换为 Embedding + LanceDB 检索。
+项目处于早期开发阶段。

@@ -15,56 +15,5 @@
     "tags": ["职场", "会议", "协作"],
     "source": "manual",
     "verified": true
-  },
-  {
-    "id": "jargon_fu_pan",
-    "term": "复盘",
-    "plain": "总结这次哪里做得好哪里做得不好",
-    "explanation": "把已经做完的事情重新梳理，分析问题和经验。",
-    "examples": [
-      "活动结束后我们明天一起复盘。"
-    ],
-    "queries": [
-      "认真总结哪里出了问题",
-      "回头分析这次过程",
-      "总结经验教训"
-    ],
-    "tags": ["职场", "总结", "项目"],
-    "source": "manual",
-    "verified": true
-  },
-  {
-    "id": "meme_zheng_huo",
-    "term": "整活",
-    "plain": "故意搞点有节目效果的事",
-    "explanation": "为了好玩、吸引注意或者制造效果，刻意搞出有戏剧性的内容。",
-    "examples": [
-      "他直播的时候又开始整活了。"
-    ],
-    "queries": [
-      "故意搞点节目效果",
-      "为了好玩搞点事情",
-      "来点有梗的操作"
-    ],
-    "tags": ["网络", "直播", "搞笑"],
-    "source": "manual",
-    "verified": true
-  },
-  {
-    "id": "meme_po_fang_le",
-    "term": "破防了",
-    "plain": "心态崩了",
-    "explanation": "原本还能撑住，但被某句话或某件事戳中后情绪明显绷不住。",
-    "examples": [
-      "看到结局那一刻我真的破防了。"
-    ],
-    "queries": [
-      "情绪一下子绷不住了",
-      "心态突然崩掉",
-      "被一句话戳中之后难受"
-    ],
-    "tags": ["网络", "情绪", "表达"],
-    "source": "manual",
-    "verified": true
   }
 ]
