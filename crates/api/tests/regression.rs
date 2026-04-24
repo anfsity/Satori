@@ -26,8 +26,9 @@ async fn regression_queries_keep_expected_ids_in_top_results() {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "/api/search?q={}",
-                        urlencoding::encode(&case.query)
+                        "/api/search?q={}&limit={}",
+                        urlencoding::encode(&case.query),
+                        case.max_rank
                     ))
                     .body(Body::empty())
                     .unwrap(),
