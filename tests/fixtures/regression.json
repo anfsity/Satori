@@ -1,6 +1,22 @@
 [
   {
     "query": "大家先统一想法",
-    "expected_ids": ["jargon_lar_tong_dui_qi"]
+    "expected_id": "jargon_lar_tong_dui_qi",
+    "max_rank": 1
+  },
+  {
+    "query": "认真总结哪里出了问题",
+    "expected_id": "jargon_fu_pan",
+    "max_rank": 1
+  },
+  {
+    "query": "故意搞点节目效果",
+    "expected_id": "meme_zheng_huo",
+    "max_rank": 1
+  },
+  {
+    "query": "心态崩了",
+    "expected_id": "meme_po_fang_le",
+    "max_rank": 1
   }
 ]

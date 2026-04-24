@@ -12,7 +12,8 @@ use tower::ServiceExt;
 #[derive(Debug, Deserialize)]
 struct RegressionCase {
     query: String,
-    expected_ids: Vec<String>,
+    expected_id: String,
+    max_rank: usize,
 }
 
 #[tokio::test]
@@ -40,16 +41,16 @@ async fn regression_queries_keep_expected_ids_in_top_results() {
             .as_array()
             .unwrap()
             .iter()
-            .take(3)
+            .take(case.max_rank)
             .filter_map(|item| item["id"].as_str())
             .collect::<Vec<_>>();
 
         assert!(
-            case.expected_ids
-                .iter()
-                .any(|expected_id| result_ids.contains(&expected_id.as_str())),
-            "query {:?} did not keep expected ids in top results: {:?}",
+            result_ids.contains(&case.expected_id.as_str()),
+            "query {:?} did not keep expected id {:?} within top {} results: {:?}",
             case.query,
+            case.expected_id,
+            case.max_rank,
             result_ids
         );
     }
