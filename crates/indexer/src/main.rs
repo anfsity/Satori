@@ -133,12 +133,14 @@ fn parse_explanation_line(line: &str) -> Option<(String, String)> {
     Some((term.to_owned(), explanation.to_owned()))
 }
 
+/// Normalized explanation payload derived from one imported external corpus entry.
 struct NormalizedImportedText {
     plain: String,
     explanation: String,
     queries: Vec<String>,
 }
 
+/// Cleans imported explanation text and derives imported searchable fields.
 fn normalize_imported_text(raw: &str) -> NormalizedImportedText {
     let segments = split_imported_segments(raw);
     let plain = segments
@@ -154,6 +156,7 @@ fn normalize_imported_text(raw: &str) -> NormalizedImportedText {
     }
 }
 
+/// Splits an imported explanation into stable searchable segments.
 fn split_imported_segments(raw: &str) -> Vec<String> {
     let normalized = raw.replace('／', " / ");
     let mut segments = Vec::new();
@@ -176,16 +179,19 @@ fn split_imported_segments(raw: &str) -> Vec<String> {
     }
 }
 
+/// Cleans one imported explanation segment without changing its meaning.
 fn normalize_imported_segment(raw: &str) -> String {
     collapse_whitespace(strip_leading_pronunciation(raw))
 }
 
+/// Removes a wrapped pronunciation prefix from the start of an imported segment.
 fn strip_leading_pronunciation(raw: &str) -> &str {
     strip_wrapped_pronunciation(raw, '(', ')')
         .or_else(|| strip_wrapped_pronunciation(raw, '（', '）'))
         .unwrap_or(raw)
 }
 
+/// Returns the remaining text when a wrapped pronunciation prefix is detected.
 fn strip_wrapped_pronunciation(raw: &str, open: char, close: char) -> Option<&str> {
     let trimmed = raw.trim();
     let rest = trimmed.strip_prefix(open)?;
@@ -199,6 +205,7 @@ fn strip_wrapped_pronunciation(raw: &str, open: char, close: char) -> Option<&st
     Some(rest[end + close.len_utf8()..].trim())
 }
 
+/// Checks whether a wrapped prefix looks like pronunciation rather than content.
 fn looks_like_pronunciation(raw: &str) -> bool {
     !raw.is_empty()
         && raw.chars().all(|item| {
@@ -206,6 +213,7 @@ fn looks_like_pronunciation(raw: &str) -> bool {
         })
 }
 
+/// Collapses repeated whitespace so imported text stays deterministic.
 fn collapse_whitespace(raw: &str) -> String {
     raw.split_whitespace().collect::<Vec<_>>().join(" ")
 }
