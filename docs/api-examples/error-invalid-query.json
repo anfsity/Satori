@@ -1,0 +1,4 @@
+{
+  "error": "invalid_query",
+  "message": "q must be present, non-empty, and within the character limit"
+}
