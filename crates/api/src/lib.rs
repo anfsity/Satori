@@ -6,8 +6,8 @@ use axum::{
     routing::get,
 };
 use satori_core::{JargonCard, SearchResponse, normalize_query, rank_keyword_matches};
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use serde::Serialize;
+use std::{collections::HashMap, sync::Arc};
 
 const DEFAULT_LIMIT: usize = 10;
 const MAX_LIMIT: usize = 50;
@@ -42,32 +42,42 @@ async fn health() -> Json<HealthResponse> {
     Json(HealthResponse { status: "ok" })
 }
 
-#[derive(Debug, Deserialize)]
-struct SearchParams {
-    q: String,
-    limit: Option<usize>,
-}
-
 #[derive(Debug, Serialize)]
 struct ErrorResponse {
     error: &'static str,
+    message: &'static str,
 }
 
 async fn search(
     State(state): State<AppState>,
-    Query(params): Query<SearchParams>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<SearchResponse>, ApiError> {
-    let query = normalize_query(&params.q, MAX_QUERY_CHARS).map_err(ApiError::from_query_error)?;
-    let limit = params.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
+    let query = normalize_query(
+        params.get("q").map(String::as_str).unwrap_or_default(),
+        MAX_QUERY_CHARS,
+    )
+    .map_err(ApiError::from_query_error)?;
+    let limit = parse_limit(params.get("limit").map(String::as_str))?;
     let results = rank_keyword_matches(&query, state.cards.iter(), limit);
 
     Ok(Json(SearchResponse { query, results }))
+}
+
+fn parse_limit(input: Option<&str>) -> Result<usize, ApiError> {
+    match input {
+        None => Ok(DEFAULT_LIMIT),
+        Some(raw) => raw
+            .parse::<usize>()
+            .map(|limit| limit.clamp(1, MAX_LIMIT))
+            .map_err(|_| ApiError::invalid_limit()),
+    }
 }
 
 #[derive(Debug)]
 struct ApiError {
     status: StatusCode,
     error: &'static str,
+    message: &'static str,
 }
 
 impl ApiError {
@@ -75,13 +85,29 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             error: "invalid_query",
+            message: "q must be present, non-empty, and within the character limit",
+        }
+    }
+
+    fn invalid_limit() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            error: "invalid_limit",
+            message: "limit must be an integer between 1 and 50",
         }
     }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (self.status, Json(ErrorResponse { error: self.error })).into_response()
+        (
+            self.status,
+            Json(ErrorResponse {
+                error: self.error,
+                message: self.message,
+            }),
+        )
+            .into_response()
     }
 }
 
@@ -89,10 +115,11 @@ impl IntoResponse for ApiError {
 mod tests {
     use super::*;
     use axum::{
-        body::Body,
+        body::{Body, to_bytes},
         http::{Request, StatusCode},
     };
     use satori_core::load_cards_from_reader;
+    use serde_json::Value;
     use tower::ServiceExt;
 
     fn fixture_cards() -> Vec<JargonCard> {
@@ -146,5 +173,50 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(payload["error"], "invalid_query");
+    }
+
+    #[tokio::test]
+    async fn search_rejects_missing_query() {
+        let response = app(AppState::new(fixture_cards()))
+            .oneshot(
+                Request::builder()
+                    .uri("/api/search")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(payload["error"], "invalid_query");
+    }
+
+    #[tokio::test]
+    async fn search_rejects_invalid_limit() {
+        let response = app(AppState::new(fixture_cards()))
+            .oneshot(
+                Request::builder()
+                    .uri("/api/search?q=%E6%B5%8B%E8%AF%95&limit=abc")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(payload["error"], "invalid_limit");
     }
 }
