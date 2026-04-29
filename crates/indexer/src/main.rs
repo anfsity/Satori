@@ -1,24 +1,48 @@
-use anyhow::{Context, bail};
+use anyhow::{Context, bail, ensure};
+use arrow_array::{
+    Array, ArrayRef, BooleanArray, FixedSizeListArray, Float32Array, RecordBatch, StringArray,
+    types::Float32Type,
+};
+use arrow_schema::{DataType, Field, Schema};
+use lancedb::{
+    database::CreateTableMode,
+    embeddings::{
+        EmbeddingFunction,
+        sentence_transformers::{
+            SentenceTransformersEmbeddings, SentenceTransformersEmbeddingsBuilder,
+        },
+    },
+    index::Index,
+};
 use satori_core::{
-    IndexDocument, JargonCard, build_index_documents, load_cards_from_reader, validate_cards,
+    IndexDocument, JargonCard, LanceDbDocument, build_index_documents, build_lancedb_documents,
+    load_cards_from_reader, validate_cards,
 };
 use std::{
     collections::HashSet,
     env,
     fs::{self, File},
-    io::{BufWriter, Write},
+    io::{BufRead, BufReader, BufWriter, Write},
     path::Path,
+    sync::Arc,
 };
 
 const DEFAULT_CARDS_PATH: &str = "data/processed/cards.json";
+const DEFAULT_INDEX_DOCS_PATH: &str = "data/processed/index_docs.jsonl";
+const DEFAULT_LANCEDB_PATH: &str = "data/processed/lancedb";
+const DEFAULT_LANCEDB_TABLE: &str = "index_documents";
+const DEFAULT_EMBEDDING_MODEL: &str = "BAAI/bge-small-zh-v1.5";
 const DEFAULT_SOURCE: &str = "mcsrainbow/chinese-internet-jargon";
+const MIN_VECTOR_INDEX_ROWS: usize = 256;
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let args = env::args().skip(1).collect::<Vec<_>>();
 
     match args.first().map(String::as_str) {
         Some("import-mcsrainbow") => import_mcsrainbow(&args[1..]),
         Some("export-index-docs") => export_index_docs_command(&args[1..]),
+        Some("build-lancedb-index") => build_lancedb_index_command(&args[1..]).await,
         Some("validate") => validate_command(args.get(1).map(String::as_str)),
         Some(path) if Path::new(path).exists() => validate_command(Some(path)),
         Some(command) => bail!("unrecognized command or missing file: {command}"),
@@ -81,10 +105,274 @@ fn export_index_docs_command(args: &[String]) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn build_lancedb_index_command(args: &[String]) -> anyhow::Result<()> {
+    let input_path = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_INDEX_DOCS_PATH);
+    let db_path = args
+        .get(1)
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_LANCEDB_PATH);
+    let table_name = args
+        .get(2)
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_LANCEDB_TABLE);
+    let model_name = args
+        .get(3)
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_EMBEDDING_MODEL);
+    let documents = load_index_documents(input_path)?;
+    let embedder = SentenceTransformerEmbedder::new(model_name)?;
+    let lancedb_documents = vectorize_documents(&documents, &embedder)?;
+
+    write_lancedb_table(db_path, table_name, &lancedb_documents).await?;
+    println!(
+        "built LanceDB table {table_name} with {} document(s) at {db_path} using {model_name}",
+        lancedb_documents.len()
+    );
+
+    Ok(())
+}
+
 fn load_cards(path: &str) -> anyhow::Result<Vec<JargonCard>> {
     let cards_file = File::open(path).with_context(|| format!("failed to open {path}"))?;
     load_cards_from_reader(cards_file)
         .with_context(|| format!("failed to load jargon cards from {path}"))
+}
+
+fn load_index_documents(path: &str) -> anyhow::Result<Vec<IndexDocument>> {
+    let file = File::open(path).with_context(|| format!("failed to open {path}"))?;
+    let reader = BufReader::new(file);
+    let mut documents = Vec::new();
+
+    for (line_number, line) in reader.lines().enumerate() {
+        let line = line.with_context(|| format!("failed to read line {}", line_number + 1))?;
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let document = serde_json::from_str(trimmed).with_context(|| {
+            format!("failed to parse index document at line {}", line_number + 1)
+        })?;
+        documents.push(document);
+    }
+
+    ensure!(!documents.is_empty(), "index document collection is empty");
+    Ok(documents)
+}
+
+trait TextEmbedder {
+    fn embed_texts(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>>;
+}
+
+#[derive(Debug)]
+struct SentenceTransformerEmbedder {
+    model: SentenceTransformersEmbeddings,
+}
+
+impl SentenceTransformerEmbedder {
+    fn new(model_name: &str) -> anyhow::Result<Self> {
+        let model = SentenceTransformersEmbeddingsBuilder::new()
+            .model(model_name)
+            .build()
+            .with_context(|| format!("failed to load embedding model {model_name}"))?;
+
+        Ok(Self { model })
+    }
+}
+
+impl TextEmbedder for SentenceTransformerEmbedder {
+    fn embed_texts(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let embeddings = self
+            .model
+            .compute_source_embeddings(Arc::new(StringArray::from(texts.to_vec())))
+            .context("failed to compute source embeddings")?;
+        let vectors = embeddings_to_vectors(&embeddings)?;
+
+        ensure!(
+            vectors.len() == texts.len(),
+            "embedding count mismatch: {} text(s) but {} vector(s)",
+            texts.len(),
+            vectors.len()
+        );
+
+        Ok(vectors)
+    }
+}
+
+fn vectorize_documents(
+    documents: &[IndexDocument],
+    embedder: &impl TextEmbedder,
+) -> anyhow::Result<Vec<LanceDbDocument>> {
+    let texts = documents
+        .iter()
+        .map(|document| document.content.clone())
+        .collect::<Vec<_>>();
+    let vectors = embedder.embed_texts(&texts)?;
+
+    build_lancedb_documents(documents, vectors).context("failed to build LanceDB documents")
+}
+
+fn embeddings_to_vectors(embeddings: &ArrayRef) -> anyhow::Result<Vec<Vec<f32>>> {
+    let list_array = embeddings
+        .as_any()
+        .downcast_ref::<FixedSizeListArray>()
+        .context("expected fixed-size-list embedding array")?;
+    let values = list_array.values();
+    let float_values = values
+        .as_any()
+        .downcast_ref::<Float32Array>()
+        .context("expected Float32 embedding values")?;
+    let dimension = list_array.value_length() as usize;
+    let mut vectors = Vec::with_capacity(list_array.len());
+
+    for row in 0..list_array.len() {
+        ensure!(!list_array.is_null(row), "embedding row {row} is null");
+
+        let start = row * dimension;
+        let vector = (0..dimension)
+            .map(|offset| float_values.value(start + offset))
+            .collect::<Vec<_>>();
+        vectors.push(vector);
+    }
+
+    Ok(vectors)
+}
+
+async fn write_lancedb_table(
+    db_path: &str,
+    table_name: &str,
+    documents: &[LanceDbDocument],
+) -> anyhow::Result<()> {
+    if let Some(parent) = Path::new(db_path)
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+
+    let batch = lancedb_record_batch(documents)?;
+    let database = lancedb::connect(db_path)
+        .execute()
+        .await
+        .with_context(|| format!("failed to connect to LanceDB at {db_path}"))?;
+    let table = database
+        .create_table(table_name, batch)
+        .mode(CreateTableMode::Overwrite)
+        .execute()
+        .await
+        .with_context(|| format!("failed to create LanceDB table {table_name}"))?;
+
+    if documents.len() < MIN_VECTOR_INDEX_ROWS {
+        return Ok(());
+    }
+
+    table
+        .create_index(&["vector"], Index::Auto)
+        .execute()
+        .await
+        .with_context(|| format!("failed to create vector index for {table_name}"))?;
+
+    Ok(())
+}
+
+fn lancedb_record_batch(documents: &[LanceDbDocument]) -> anyhow::Result<RecordBatch> {
+    ensure!(
+        !documents.is_empty(),
+        "LanceDB document collection is empty"
+    );
+
+    let dimension = documents[0].vector.len();
+    let schema = Arc::new(lancedb_schema(dimension));
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(
+                documents
+                    .iter()
+                    .map(|document| document.id.clone())
+                    .collect::<Vec<_>>(),
+            )),
+            Arc::new(StringArray::from(
+                documents
+                    .iter()
+                    .map(|document| document.term.clone())
+                    .collect::<Vec<_>>(),
+            )),
+            Arc::new(StringArray::from(
+                documents
+                    .iter()
+                    .map(|document| document.plain.clone())
+                    .collect::<Vec<_>>(),
+            )),
+            Arc::new(StringArray::from(
+                documents
+                    .iter()
+                    .map(|document| document.explanation.clone())
+                    .collect::<Vec<_>>(),
+            )),
+            Arc::new(StringArray::from(
+                documents
+                    .iter()
+                    .map(|document| document.tags_json.clone())
+                    .collect::<Vec<_>>(),
+            )),
+            Arc::new(StringArray::from(
+                documents
+                    .iter()
+                    .map(|document| document.source.clone())
+                    .collect::<Vec<_>>(),
+            )),
+            Arc::new(BooleanArray::from(
+                documents
+                    .iter()
+                    .map(|document| document.verified)
+                    .collect::<Vec<_>>(),
+            )),
+            Arc::new(StringArray::from(
+                documents
+                    .iter()
+                    .map(|document| document.content.clone())
+                    .collect::<Vec<_>>(),
+            )),
+            Arc::new(
+                FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+                    documents
+                        .iter()
+                        .map(|document| Some(document.vector.iter().copied().map(Some))),
+                    dimension as i32,
+                ),
+            ),
+        ],
+    )
+    .context("failed to build LanceDB record batch")?;
+
+    Ok(batch)
+}
+
+fn lancedb_schema(dimension: usize) -> Schema {
+    Schema::new(vec![
+        Field::new("id", DataType::Utf8, false),
+        Field::new("term", DataType::Utf8, false),
+        Field::new("plain", DataType::Utf8, false),
+        Field::new("explanation", DataType::Utf8, false),
+        Field::new("tags_json", DataType::Utf8, false),
+        Field::new("source", DataType::Utf8, false),
+        Field::new("verified", DataType::Boolean, false),
+        Field::new("content", DataType::Utf8, false),
+        Field::new(
+            "vector",
+            DataType::FixedSizeList(
+                Arc::new(Field::new("item", DataType::Float32, true)),
+                dimension as i32,
+            ),
+            true,
+        ),
+    ])
 }
 
 fn write_cards(path: &str, cards: &[JargonCard]) -> anyhow::Result<()> {
@@ -299,6 +587,28 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[derive(Debug)]
+    struct DeterministicEmbedder {
+        dimensions: usize,
+    }
+
+    impl TextEmbedder for DeterministicEmbedder {
+        fn embed_texts(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+            Ok(texts
+                .iter()
+                .map(|text| {
+                    let mut vector = vec![0.0; self.dimensions];
+
+                    for (index, byte) in text.as_bytes().iter().enumerate() {
+                        vector[index % self.dimensions] += f32::from(*byte) / 255.0;
+                    }
+
+                    vector
+                })
+                .collect())
+        }
+    }
+
     #[test]
     fn parse_mcsrainbow_markdown_imports_explanation_lines() {
         let markdown = r#"
@@ -398,6 +708,76 @@ mod tests {
         assert!(first.content.contains("term: 拉通对齐"));
 
         fs::remove_file(temp_path).unwrap();
+    }
+
+    #[test]
+    fn load_index_documents_reads_jsonl_rows() {
+        let cards =
+            load_cards_from_reader(include_str!("../../../tests/fixtures/cards.json").as_bytes())
+                .unwrap();
+        let documents = build_index_documents(&cards);
+        let temp_path = unique_temp_path("index-docs.jsonl");
+
+        write_index_documents(temp_path.to_str().unwrap(), &documents).unwrap();
+
+        let loaded = load_index_documents(temp_path.to_str().unwrap()).unwrap();
+
+        assert_eq!(loaded, documents);
+
+        fs::remove_file(temp_path).unwrap();
+    }
+
+    #[test]
+    fn vectorize_documents_builds_lancedb_documents() {
+        let cards =
+            load_cards_from_reader(include_str!("../../../tests/fixtures/cards.json").as_bytes())
+                .unwrap();
+        let documents = build_index_documents(&cards);
+        let lancedb_documents =
+            vectorize_documents(&documents, &DeterministicEmbedder { dimensions: 4 }).unwrap();
+
+        assert_eq!(lancedb_documents.len(), documents.len());
+        assert_eq!(lancedb_documents[0].id, documents[0].id);
+        assert_eq!(lancedb_documents[0].vector.len(), 4);
+        assert_eq!(lancedb_documents[0].tags_json, r#"["职场","会议","协作"]"#);
+    }
+
+    #[tokio::test]
+    async fn write_lancedb_table_creates_table_for_small_corpus() {
+        let cards =
+            load_cards_from_reader(include_str!("../../../tests/fixtures/cards.json").as_bytes())
+                .unwrap();
+        let documents = build_index_documents(&cards);
+        let lancedb_documents =
+            vectorize_documents(&documents, &DeterministicEmbedder { dimensions: 4 }).unwrap();
+        let db_path = unique_temp_path("lancedb");
+
+        write_lancedb_table(
+            db_path.to_str().unwrap(),
+            DEFAULT_LANCEDB_TABLE,
+            &lancedb_documents,
+        )
+        .await
+        .unwrap();
+
+        let database = lancedb::connect(db_path.to_str().unwrap())
+            .execute()
+            .await
+            .unwrap();
+        let table = database
+            .open_table(DEFAULT_LANCEDB_TABLE)
+            .execute()
+            .await
+            .unwrap();
+        let schema = table.schema().await.unwrap();
+        let field = schema.field_with_name("vector").unwrap();
+
+        assert_eq!(
+            field.data_type(),
+            &lancedb_schema(4).field(8).data_type().clone()
+        );
+
+        fs::remove_dir_all(db_path).unwrap();
     }
 
     fn unique_temp_path(name: &str) -> std::path::PathBuf {

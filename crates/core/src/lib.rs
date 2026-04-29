@@ -139,6 +139,114 @@ pub fn build_index_documents(cards: &[JargonCard]) -> Vec<IndexDocument> {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LanceDbDocument {
+    pub id: String,
+    pub term: String,
+    pub plain: String,
+    pub explanation: String,
+    pub tags_json: String,
+    pub source: String,
+    pub verified: bool,
+    pub content: String,
+    pub vector: Vec<f32>,
+}
+
+impl LanceDbDocument {
+    pub fn from_index_document(document: &IndexDocument, vector: Vec<f32>) -> Self {
+        Self {
+            id: document.id.clone(),
+            term: document.term.clone(),
+            plain: document.plain.clone(),
+            explanation: document.explanation.clone(),
+            tags_json: serde_json::to_string(&document.tags).expect("serialize tags to JSON"),
+            source: document.source.clone(),
+            verified: document.verified,
+            content: document.content.clone(),
+            vector,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LanceDbDocumentError {
+    DocumentVectorCountMismatch {
+        documents: usize,
+        vectors: usize,
+    },
+    EmptyVector {
+        document_id: String,
+    },
+    InconsistentVectorDimensions {
+        expected: usize,
+        actual: usize,
+        document_id: String,
+    },
+}
+
+impl fmt::Display for LanceDbDocumentError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DocumentVectorCountMismatch { documents, vectors } => write!(
+                formatter,
+                "document/vector count mismatch: {documents} document(s) but {vectors} vector(s)"
+            ),
+            Self::EmptyVector { document_id } => {
+                write!(formatter, "document {document_id} has an empty vector")
+            }
+            Self::InconsistentVectorDimensions {
+                expected,
+                actual,
+                document_id,
+            } => write!(
+                formatter,
+                "document {document_id} has vector length {actual}, expected {expected}"
+            ),
+        }
+    }
+}
+
+impl Error for LanceDbDocumentError {}
+
+pub fn build_lancedb_documents(
+    documents: &[IndexDocument],
+    vectors: Vec<Vec<f32>>,
+) -> Result<Vec<LanceDbDocument>, LanceDbDocumentError> {
+    if documents.len() != vectors.len() {
+        return Err(LanceDbDocumentError::DocumentVectorCountMismatch {
+            documents: documents.len(),
+            vectors: vectors.len(),
+        });
+    }
+
+    let mut expected_dimensions = None;
+    let mut lancedb_documents = Vec::with_capacity(documents.len());
+
+    for (document, vector) in documents.iter().zip(vectors) {
+        if vector.is_empty() {
+            return Err(LanceDbDocumentError::EmptyVector {
+                document_id: document.id.clone(),
+            });
+        }
+
+        match expected_dimensions {
+            Some(expected) if expected != vector.len() => {
+                return Err(LanceDbDocumentError::InconsistentVectorDimensions {
+                    expected,
+                    actual: vector.len(),
+                    document_id: document.id.clone(),
+                });
+            }
+            None => expected_dimensions = Some(vector.len()),
+            _ => {}
+        }
+
+        lancedb_documents.push(LanceDbDocument::from_index_document(document, vector));
+    }
+
+    Ok(lancedb_documents)
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SearchResult {
     pub id: String,
     pub term: String,
@@ -521,6 +629,60 @@ mod tests {
         assert!(document.content.contains("examples: "));
         assert!(document.content.contains("queries: "));
         assert!(document.content.contains("tags: "));
+    }
+
+    #[test]
+    fn lancedb_document_contains_json_tags_and_vector() {
+        let document = card().index_document();
+        let vector = vec![0.1, 0.2, 0.3];
+        let lancedb_document = LanceDbDocument::from_index_document(&document, vector.clone());
+
+        assert_eq!(lancedb_document.id, document.id);
+        assert_eq!(lancedb_document.tags_json, r#"["职场","会议","协作"]"#);
+        assert_eq!(lancedb_document.vector, vector);
+    }
+
+    #[test]
+    fn build_lancedb_documents_rejects_mismatched_counts() {
+        let documents = build_index_documents(&fixture_cards());
+        let error = build_lancedb_documents(&documents, vec![vec![0.1, 0.2]]).unwrap_err();
+
+        assert_eq!(
+            error,
+            LanceDbDocumentError::DocumentVectorCountMismatch {
+                documents: documents.len(),
+                vectors: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn build_lancedb_documents_rejects_empty_vector() {
+        let documents = build_index_documents(&fixture_cards()[..1]);
+        let error = build_lancedb_documents(&documents, vec![Vec::new()]).unwrap_err();
+
+        assert_eq!(
+            error,
+            LanceDbDocumentError::EmptyVector {
+                document_id: documents[0].id.clone(),
+            }
+        );
+    }
+
+    #[test]
+    fn build_lancedb_documents_rejects_inconsistent_vector_dimensions() {
+        let documents = build_index_documents(&fixture_cards()[..2]);
+        let error =
+            build_lancedb_documents(&documents, vec![vec![0.1, 0.2], vec![0.3]]).unwrap_err();
+
+        assert_eq!(
+            error,
+            LanceDbDocumentError::InconsistentVectorDimensions {
+                expected: 2,
+                actual: 1,
+                document_id: documents[1].id.clone(),
+            }
+        );
     }
 
     #[test]
