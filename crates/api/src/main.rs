@@ -15,11 +15,12 @@ async fn main() -> anyhow::Result<()> {
         File::open(&cards_path).with_context(|| format!("failed to open {cards_path}"))?;
     let cards = load_cards_from_reader(cards_file)
         .with_context(|| format!("failed to load jargon cards from {cards_path}"))?;
+    let state = AppState::new(cards).context("failed to build validated app state")?;
     let listener = TcpListener::bind(address)
         .await
         .with_context(|| format!("failed to bind {address}"))?;
 
-    axum::serve(listener, app(AppState::new(cards)))
+    axum::serve(listener, app(state))
         .await
         .context("api server failed")?;
 

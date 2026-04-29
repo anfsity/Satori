@@ -20,9 +20,10 @@ struct RegressionCase {
 async fn regression_queries_keep_expected_ids_in_top_results() {
     let cards = load_cards();
     let cases = load_regression_cases();
+    let state = AppState::new(cards).unwrap();
 
     for case in cases {
-        let response = app(AppState::new(cards.clone()))
+        let response = app(state.clone())
             .oneshot(
                 Request::builder()
                     .uri(format!(

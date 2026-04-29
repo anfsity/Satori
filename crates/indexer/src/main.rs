@@ -69,6 +69,7 @@ fn export_index_docs_command(args: &[String]) -> anyhow::Result<()> {
         .map(String::as_str)
         .unwrap_or("data/processed/index_docs.jsonl");
     let cards = load_cards(input_path)?;
+    validate_cards(&cards)?;
     let documents = build_index_documents(&cards);
 
     write_index_documents(output_path, &documents)?;
