@@ -164,6 +164,28 @@ cargo run -p satori-indexer -- tests/fixtures/cards.json
 cargo run -p satori-indexer -- validate data/processed/imported/mcsrainbow_cards.json
 ```
 
+导出稳定的索引文档。
+
+```bash
+cargo run -p satori-indexer -- export-index-docs
+```
+
+基于索引文档构建本地 LanceDB 表。
+
+```bash
+cargo run -p satori-indexer -- build-lancedb-index
+```
+
+默认输入文件是 `data/processed/index_docs.jsonl`。
+
+默认 LanceDB 路径是 `data/processed/lancedb`。
+
+默认表名是 `index_documents`。
+
+默认嵌入模型是 `BAAI/bge-small-zh-v1.5`。
+
+当前语料很小时会先写入表；向量索引会在语料规模足够后再创建。
+
 检查健康状态。
 
 ```bash
@@ -193,7 +215,7 @@ tests/
 
 `crates/core` 提供检索卡片、搜索结果和基础排序逻辑。
 
-`crates/indexer` 目前提供本地语料校验和外部语料导入命令。
+`crates/indexer` 目前提供本地语料校验、外部语料导入、索引文档导出和本地 LanceDB 构建命令。
 
 当前搜索实现读取本地 JSON 卡片，并使用简单关键词排序。
 
