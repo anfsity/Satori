@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use satori_core::{JargonCard, SearchResponse, normalize_query, rank_keyword_matches};
+use satori_core::{CardValidationError, JargonCard, SearchIndex, SearchResponse, normalize_query};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -16,14 +16,14 @@ const MAX_QUERY_CHARS: usize = 200;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
-    cards: Arc<Vec<JargonCard>>,
+    search_index: Arc<SearchIndex>,
 }
 
 impl AppState {
-    pub fn new(cards: Vec<JargonCard>) -> Self {
-        Self {
-            cards: Arc::new(cards),
-        }
+    pub fn new(cards: Vec<JargonCard>) -> Result<Self, CardValidationError> {
+        Ok(Self {
+            search_index: Arc::new(SearchIndex::new(cards)?),
+        })
     }
 }
 
@@ -69,7 +69,7 @@ async fn search(
     let query = normalize_query(params.q.as_deref().unwrap_or_default(), MAX_QUERY_CHARS)
         .map_err(ApiError::from_query_error)?;
     let limit = parse_limit(params.limit.as_deref())?;
-    let results = rank_keyword_matches(&query, state.cards.iter(), limit);
+    let results = state.search_index.search(&query, limit);
 
     Ok(Json(SearchResponse { query, results }))
 }
@@ -140,7 +140,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_returns_ok() {
-        let response = app(AppState::new(fixture_cards()))
+        let response = app(AppState::new(fixture_cards()).unwrap())
             .oneshot(
                 Request::builder()
                     .uri("/api/health")
@@ -158,7 +158,7 @@ mod tests {
         let cards = fixture_cards();
         let query = cards[0].plain.clone();
         let encoded_query = urlencoding::encode(&query);
-        let response = app(AppState::new(cards))
+        let response = app(AppState::new(cards).unwrap())
             .oneshot(
                 Request::builder()
                     .uri(format!("/api/search?q={encoded_query}"))
@@ -173,7 +173,7 @@ mod tests {
 
     #[tokio::test]
     async fn search_rejects_empty_query() {
-        let response = app(AppState::new(fixture_cards()))
+        let response = app(AppState::new(fixture_cards()).unwrap())
             .oneshot(
                 Request::builder()
                     .uri("/api/search?q=%20")
@@ -193,7 +193,7 @@ mod tests {
 
     #[tokio::test]
     async fn search_rejects_missing_query() {
-        let response = app(AppState::new(fixture_cards()))
+        let response = app(AppState::new(fixture_cards()).unwrap())
             .oneshot(
                 Request::builder()
                     .uri("/api/search")
@@ -213,7 +213,7 @@ mod tests {
 
     #[tokio::test]
     async fn search_rejects_invalid_limit() {
-        let response = app(AppState::new(fixture_cards()))
+        let response = app(AppState::new(fixture_cards()).unwrap())
             .oneshot(
                 Request::builder()
                     .uri("/api/search?q=%E6%B5%8B%E8%AF%95&limit=abc")
@@ -233,7 +233,7 @@ mod tests {
 
     #[tokio::test]
     async fn search_clamps_negative_limit_to_one() {
-        let response = app(AppState::new(fixture_cards()))
+        let response = app(AppState::new(fixture_cards()).unwrap())
             .oneshot(
                 Request::builder()
                     .uri("/api/search?q=%E5%A4%A7%E5%AE%B6%E5%85%88%E7%BB%9F%E4%B8%80%E6%83%B3%E6%B3%95&limit=-1")
@@ -253,7 +253,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_allows_cross_origin_get_requests() {
-        let response = app(AppState::new(fixture_cards()))
+        let response = app(AppState::new(fixture_cards()).unwrap())
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
@@ -277,7 +277,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_handles_cors_preflight_requests() {
-        let response = app(AppState::new(fixture_cards()))
+        let response = app(AppState::new(fixture_cards()).unwrap())
             .oneshot(
                 Request::builder()
                     .method(Method::OPTIONS)
@@ -306,6 +306,21 @@ mod tests {
                 .to_str()
                 .unwrap()
                 .contains("GET")
+        );
+    }
+
+    #[test]
+    fn app_state_rejects_invalid_cards() {
+        let mut cards = fixture_cards();
+        cards[1].id = cards[0].id.clone();
+
+        let error = AppState::new(cards).unwrap_err();
+
+        assert!(
+            error
+                .issues
+                .iter()
+                .any(|issue| issue.message == "duplicate id")
         );
     }
 }

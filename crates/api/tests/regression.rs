@@ -22,7 +22,7 @@ async fn regression_queries_keep_expected_ids_in_top_results() {
     let cases = load_regression_cases();
 
     for case in cases {
-        let response = app(AppState::new(cards.clone()))
+        let response = app(AppState::new(cards.clone()).unwrap())
             .oneshot(
                 Request::builder()
                     .uri(format!(

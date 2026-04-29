@@ -10,7 +10,7 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn health_endpoint_returns_ok_status() {
-    let response = app(AppState::new(fixture_cards()))
+    let response = app(AppState::new(fixture_cards()).unwrap())
         .oneshot(
             Request::builder()
                 .uri("/api/health")
@@ -58,7 +58,7 @@ fn load_expected_json(name: &str) -> Value {
 #[tokio::test]
 async fn search_endpoint_returns_expected_shape() {
     let query = "大家先统一想法";
-    let response = app(AppState::new(fixture_cards()))
+    let response = app(AppState::new(fixture_cards()).unwrap())
         .oneshot(
             Request::builder()
                 .uri(format!(
@@ -81,7 +81,7 @@ async fn search_endpoint_returns_expected_shape() {
 
 #[tokio::test]
 async fn search_endpoint_honors_limit_parameter() {
-    let response = app(AppState::new(fixture_cards()))
+    let response = app(AppState::new(fixture_cards()).unwrap())
         .oneshot(
             Request::builder()
                 .uri(format!(
@@ -105,8 +105,50 @@ async fn search_endpoint_honors_limit_parameter() {
 }
 
 #[tokio::test]
+async fn search_endpoint_returns_empty_results_for_unknown_query() {
+    let response = app(AppState::new(fixture_cards()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/search?q=xyznotfound")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let payload: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(payload["query"], "xyznotfound");
+    assert_eq!(payload["results"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn search_endpoint_rejects_low_signal_single_character_overlap() {
+    let response = app(AppState::new(fixture_cards()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/search?q={}", urlencoding::encode("心情很好")))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let payload: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(payload["query"], "心情很好");
+    assert_eq!(payload["results"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
 async fn search_endpoint_matches_invalid_query_example() {
-    let response = app(AppState::new(fixture_cards()))
+    let response = app(AppState::new(fixture_cards()).unwrap())
         .oneshot(
             Request::builder()
                 .uri("/api/search")
@@ -126,7 +168,7 @@ async fn search_endpoint_matches_invalid_query_example() {
 
 #[tokio::test]
 async fn search_endpoint_matches_invalid_limit_example() {
-    let response = app(AppState::new(fixture_cards()))
+    let response = app(AppState::new(fixture_cards()).unwrap())
         .oneshot(
             Request::builder()
                 .uri("/api/search?q=%E6%B5%8B%E8%AF%95&limit=abc")

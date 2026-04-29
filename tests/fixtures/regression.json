@@ -5,7 +5,22 @@
     "max_rank": 1
   },
   {
+    "query": "拉通对齐",
+    "expected_id": "jargon_lar_tong_dui_qi",
+    "max_rank": 1
+  },
+  {
+    "query": "几个人先同步一下",
+    "expected_id": "jargon_lar_tong_dui_qi",
+    "max_rank": 1
+  },
+  {
     "query": "认真总结哪里出了问题",
+    "expected_id": "jargon_fu_pan",
+    "max_rank": 1
+  },
+  {
+    "query": "总结经验教训",
     "expected_id": "jargon_fu_pan",
     "max_rank": 1
   },
@@ -15,7 +30,22 @@
     "max_rank": 1
   },
   {
+    "query": "为了好玩搞点事情",
+    "expected_id": "meme_zheng_huo",
+    "max_rank": 1
+  },
+  {
     "query": "心态崩了",
+    "expected_id": "meme_po_fang_le",
+    "max_rank": 1
+  },
+  {
+    "query": "心态一下崩掉",
+    "expected_id": "meme_po_fang_le",
+    "max_rank": 1
+  },
+  {
+    "query": "被一句话戳中之后难受",
     "expected_id": "meme_po_fang_le",
     "max_rank": 1
   }

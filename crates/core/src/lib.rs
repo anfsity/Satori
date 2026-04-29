@@ -32,6 +32,80 @@ impl JargonCard {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SearchIndex {
+    entries: Vec<SearchEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct SearchEntry {
+    card: JargonCard,
+    searchable_text: String,
+    searchable_chars: HashSet<char>,
+    searchable_bigrams: HashSet<(char, char)>,
+}
+
+impl SearchIndex {
+    pub fn new(cards: Vec<JargonCard>) -> Result<Self, CardValidationError> {
+        validate_cards(&cards)?;
+
+        Ok(Self {
+            entries: cards
+                .into_iter()
+                .map(|card| {
+                    let searchable_text = card.searchable_text();
+                    let searchable_chars = distinct_non_whitespace_chars(&searchable_text);
+                    let searchable_bigrams = distinct_non_whitespace_bigrams(&searchable_text);
+
+                    SearchEntry {
+                        card,
+                        searchable_text,
+                        searchable_chars,
+                        searchable_bigrams,
+                    }
+                })
+                .collect(),
+        })
+    }
+
+    pub fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
+        let query = query.trim();
+        let query_chars = distinct_non_whitespace_chars(query);
+        let query_bigrams = distinct_non_whitespace_bigrams(query);
+
+        if query.is_empty() || limit == 0 {
+            return Vec::new();
+        }
+
+        let mut results = self
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                let score = keyword_score_with_text(
+                    query,
+                    &query_chars,
+                    &query_bigrams,
+                    &entry.card,
+                    &entry.searchable_text,
+                    &entry.searchable_chars,
+                    &entry.searchable_bigrams,
+                );
+
+                (score > 0.0).then(|| SearchResult::from_card(&entry.card, score))
+            })
+            .collect::<Vec<_>>();
+
+        results.sort_by(|left, right| {
+            right
+                .score
+                .total_cmp(&left.score)
+                .then_with(|| left.term.cmp(&right.term))
+        });
+        results.truncate(limit);
+        results
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IndexDocument {
     pub id: String,
@@ -297,6 +371,8 @@ pub fn rank_keyword_matches<'a>(
     limit: usize,
 ) -> Vec<SearchResult> {
     let query = query.trim();
+    let query_chars = distinct_non_whitespace_chars(query);
+    let query_bigrams = distinct_non_whitespace_bigrams(query);
 
     if query.is_empty() || limit == 0 {
         return Vec::new();
@@ -305,7 +381,18 @@ pub fn rank_keyword_matches<'a>(
     let mut results = cards
         .into_iter()
         .filter_map(|card| {
-            let score = keyword_score(query, card);
+            let searchable_text = card.searchable_text();
+            let searchable_chars = distinct_non_whitespace_chars(&searchable_text);
+            let searchable_bigrams = distinct_non_whitespace_bigrams(&searchable_text);
+            let score = keyword_score_with_text(
+                query,
+                &query_chars,
+                &query_bigrams,
+                card,
+                &searchable_text,
+                &searchable_chars,
+                &searchable_bigrams,
+            );
 
             (score > 0.0).then(|| SearchResult::from_card(card, score))
         })
@@ -321,7 +408,15 @@ pub fn rank_keyword_matches<'a>(
     results
 }
 
-fn keyword_score(query: &str, card: &JargonCard) -> f32 {
+fn keyword_score_with_text(
+    query: &str,
+    query_chars: &HashSet<char>,
+    query_bigrams: &HashSet<(char, char)>,
+    card: &JargonCard,
+    searchable_text: &str,
+    searchable_chars: &HashSet<char>,
+    searchable_bigrams: &HashSet<(char, char)>,
+) -> f32 {
     if card.term == query || card.plain == query {
         return 1.0;
     }
@@ -330,17 +425,63 @@ fn keyword_score(query: &str, card: &JargonCard) -> f32 {
         return 0.95;
     }
 
-    let text = card.searchable_text();
-
-    if text.contains(query) {
+    if searchable_text.contains(query) {
         return 0.75;
     }
 
-    if query.chars().any(|item| text.contains(item)) {
-        return 0.2;
+    let fallback_score = fallback_score(
+        query_chars,
+        query_bigrams,
+        searchable_chars,
+        searchable_bigrams,
+    );
+
+    if fallback_score > 0.0 {
+        return fallback_score;
     }
 
     0.0
+}
+
+fn distinct_non_whitespace_chars(text: &str) -> HashSet<char> {
+    text.chars().filter(|item| !item.is_whitespace()).collect()
+}
+
+fn distinct_non_whitespace_bigrams(text: &str) -> HashSet<(char, char)> {
+    let chars = text
+        .chars()
+        .filter(|item| !item.is_whitespace())
+        .collect::<Vec<_>>();
+
+    chars
+        .windows(2)
+        .map(|window| (window[0], window[1]))
+        .collect()
+}
+
+fn fallback_score(
+    query_chars: &HashSet<char>,
+    query_bigrams: &HashSet<(char, char)>,
+    searchable_chars: &HashSet<char>,
+    searchable_bigrams: &HashSet<(char, char)>,
+) -> f32 {
+    let shared_bigrams = query_bigrams
+        .iter()
+        .filter(|item| searchable_bigrams.contains(item))
+        .count();
+
+    if shared_bigrams == 0 {
+        return 0.0;
+    }
+
+    let shared_chars = query_chars
+        .iter()
+        .filter(|item| searchable_chars.contains(item))
+        .count();
+    let char_coverage = shared_chars as f32 / query_chars.len() as f32;
+    let bigram_coverage = shared_bigrams as f32 / query_bigrams.len() as f32;
+
+    0.2 + (char_coverage * 0.05) + (bigram_coverage * 0.05)
 }
 
 #[cfg(test)]
@@ -405,6 +546,72 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, card.id);
+    }
+
+    #[test]
+    fn rank_keyword_matches_orders_same_score_by_term() {
+        let mut cards = fixture_cards();
+        cards[0].term = "b".to_owned();
+        cards[1].term = "a".to_owned();
+        cards[0].plain = "共享匹配".to_owned();
+        cards[1].plain = "共享匹配".to_owned();
+        cards[0].queries.clear();
+        cards[1].queries.clear();
+
+        let results = rank_keyword_matches("共享匹配", cards.iter(), 2);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].term, "a");
+        assert_eq!(results[1].term, "b");
+    }
+
+    #[test]
+    fn search_index_returns_expected_card() {
+        let card = card();
+        let index = SearchIndex::new(vec![card.clone()]).unwrap();
+        let results = index.search(&card.plain, 1);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, card.id);
+    }
+
+    #[test]
+    fn search_index_returns_query_match_before_character_fallback() {
+        let cards = fixture_cards();
+        let exact_query = cards[0].queries[1].clone();
+        let index = SearchIndex::new(cards).unwrap();
+        let results = index.search(&exact_query, 1);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "jargon_lar_tong_dui_qi");
+        assert_eq!(results[0].score, 0.95);
+    }
+
+    #[test]
+    fn search_index_returns_bigram_overlap_match_for_approximate_query() {
+        let index = SearchIndex::new(fixture_cards()).unwrap();
+        let results = index.search("心态一下崩掉", 1);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "meme_po_fang_le");
+        assert!(results[0].score > 0.2);
+        assert!(results[0].score < 0.75);
+    }
+
+    #[test]
+    fn search_index_returns_empty_results_for_unknown_query() {
+        let index = SearchIndex::new(fixture_cards()).unwrap();
+        let results = index.search("xyznotfound", 5);
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_index_rejects_low_signal_single_character_overlap() {
+        let index = SearchIndex::new(fixture_cards()).unwrap();
+        let results = index.search("心情很好", 5);
+
+        assert!(results.is_empty());
     }
 
     #[test]
@@ -492,6 +699,21 @@ mod tests {
                 .issues
                 .iter()
                 .any(|issue| issue.message == "card has no searchable text")
+        );
+    }
+
+    #[test]
+    fn search_index_rejects_invalid_cards() {
+        let mut cards = fixture_cards();
+        cards[1].id = cards[0].id.clone();
+
+        let error = SearchIndex::new(cards).unwrap_err();
+
+        assert!(
+            error
+                .issues
+                .iter()
+                .any(|issue| issue.message == "duplicate id")
         );
     }
 }
