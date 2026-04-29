@@ -514,10 +514,23 @@ mod tests {
     }
 
     #[test]
+    fn build_lancedb_documents_rejects_empty_vector() {
+        let documents = build_index_documents(&fixture_cards()[..1]);
+        let error = build_lancedb_documents(&documents, vec![Vec::new()]).unwrap_err();
+
+        assert_eq!(
+            error,
+            LanceDbDocumentError::EmptyVector {
+                document_id: documents[0].id.clone(),
+            }
+        );
+    }
+
+    #[test]
     fn build_lancedb_documents_rejects_inconsistent_vector_dimensions() {
         let documents = build_index_documents(&fixture_cards()[..2]);
-        let error = build_lancedb_documents(&documents, vec![vec![0.1, 0.2], vec![0.3]])
-            .unwrap_err();
+        let error =
+            build_lancedb_documents(&documents, vec![vec![0.1, 0.2], vec![0.3]]).unwrap_err();
 
         assert_eq!(
             error,

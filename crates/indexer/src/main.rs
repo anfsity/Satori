@@ -8,7 +8,9 @@ use lancedb::{
     database::CreateTableMode,
     embeddings::{
         EmbeddingFunction,
-        sentence_transformers::{SentenceTransformersEmbeddings, SentenceTransformersEmbeddingsBuilder},
+        sentence_transformers::{
+            SentenceTransformersEmbeddings, SentenceTransformersEmbeddingsBuilder,
+        },
     },
     index::Index,
 };
@@ -17,12 +19,12 @@ use satori_core::{
     load_cards_from_reader, validate_cards,
 };
 use std::{
-    sync::Arc,
     collections::HashSet,
     env,
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Write},
     path::Path,
+    sync::Arc,
 };
 
 const DEFAULT_CARDS_PATH: &str = "data/processed/cards.json";
@@ -244,7 +246,10 @@ async fn write_lancedb_table(
     table_name: &str,
     documents: &[LanceDbDocument],
 ) -> anyhow::Result<()> {
-    if let Some(parent) = Path::new(db_path).parent() {
+    if let Some(parent) = Path::new(db_path)
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
@@ -275,7 +280,10 @@ async fn write_lancedb_table(
 }
 
 fn lancedb_record_batch(documents: &[LanceDbDocument]) -> anyhow::Result<RecordBatch> {
-    ensure!(!documents.is_empty(), "LanceDB document collection is empty");
+    ensure!(
+        !documents.is_empty(),
+        "LanceDB document collection is empty"
+    );
 
     let dimension = documents[0].vector.len();
     let schema = Arc::new(lancedb_schema(dimension));
@@ -330,12 +338,14 @@ fn lancedb_record_batch(documents: &[LanceDbDocument]) -> anyhow::Result<RecordB
                     .map(|document| document.content.clone())
                     .collect::<Vec<_>>(),
             )),
-            Arc::new(FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-                documents
-                    .iter()
-                    .map(|document| Some(document.vector.iter().copied().map(Some))),
-                dimension as i32,
-            )),
+            Arc::new(
+                FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+                    documents
+                        .iter()
+                        .map(|document| Some(document.vector.iter().copied().map(Some))),
+                    dimension as i32,
+                ),
+            ),
         ],
     )
     .context("failed to build LanceDB record batch")?;
@@ -753,11 +763,18 @@ mod tests {
             .execute()
             .await
             .unwrap();
-        let table = database.open_table(DEFAULT_LANCEDB_TABLE).execute().await.unwrap();
+        let table = database
+            .open_table(DEFAULT_LANCEDB_TABLE)
+            .execute()
+            .await
+            .unwrap();
         let schema = table.schema().await.unwrap();
         let field = schema.field_with_name("vector").unwrap();
 
-        assert_eq!(field.data_type(), &lancedb_schema(4).field(8).data_type().clone());
+        assert_eq!(
+            field.data_type(),
+            &lancedb_schema(4).field(8).data_type().clone()
+        );
 
         fs::remove_dir_all(db_path).unwrap();
     }
