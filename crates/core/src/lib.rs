@@ -100,6 +100,7 @@ impl SearchIndex {
                 .score
                 .total_cmp(&left.score)
                 .then_with(|| left.term.cmp(&right.term))
+                .then_with(|| left.id.cmp(&right.id))
         });
         results.truncate(limit);
         results
@@ -403,6 +404,7 @@ pub fn rank_keyword_matches<'a>(
             .score
             .total_cmp(&left.score)
             .then_with(|| left.term.cmp(&right.term))
+            .then_with(|| left.id.cmp(&right.id))
     });
     results.truncate(limit);
     results
@@ -425,7 +427,7 @@ fn keyword_score_with_text(
         return 0.95;
     }
 
-    if searchable_text.contains(query) {
+    if query.chars().nth(1).is_some() && searchable_text.contains(query) {
         return 0.75;
     }
 
@@ -566,6 +568,25 @@ mod tests {
     }
 
     #[test]
+    fn rank_keyword_matches_orders_same_score_and_term_by_id() {
+        let mut cards = fixture_cards();
+        cards[0].term = "共享匹配".to_owned();
+        cards[1].term = "共享匹配".to_owned();
+        cards[0].id = "b".to_owned();
+        cards[1].id = "a".to_owned();
+        cards[0].plain = "共享匹配".to_owned();
+        cards[1].plain = "共享匹配".to_owned();
+        cards[0].queries.clear();
+        cards[1].queries.clear();
+
+        let results = rank_keyword_matches("共享匹配", cards.iter(), 2);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].id, "a");
+        assert_eq!(results[1].id, "b");
+    }
+
+    #[test]
     fn search_index_returns_expected_card() {
         let card = card();
         let index = SearchIndex::new(vec![card.clone()]).unwrap();
@@ -610,6 +631,14 @@ mod tests {
     fn search_index_rejects_low_signal_single_character_overlap() {
         let index = SearchIndex::new(fixture_cards()).unwrap();
         let results = index.search("心情很好", 5);
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_index_rejects_single_character_substring_match() {
+        let index = SearchIndex::new(fixture_cards()).unwrap();
+        let results = index.search("心", 5);
 
         assert!(results.is_empty());
     }
