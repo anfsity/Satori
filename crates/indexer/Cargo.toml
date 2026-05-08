@@ -11,5 +11,6 @@ arrow-array.workspace = true
 arrow-schema.workspace = true
 lancedb.workspace = true
 satori-core = { path = "../core" }
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

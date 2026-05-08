@@ -4769,6 +4769,7 @@ dependencies = [
  "arrow-schema",
  "lancedb",
  "satori-core",
+ "serde",
  "serde_json",
  "tokio",
 ]

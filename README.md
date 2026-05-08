@@ -177,6 +177,14 @@ cargo run -p satori-indexer -- tests/fixtures/cards.json
 cargo run -p satori-indexer -- validate data/processed/imported/mcsrainbow_cards.json
 ```
 
+运行本地关键词检索评估。
+
+```bash
+cargo run -p satori-indexer -- evaluate-search
+```
+
+默认评估语料是 `data/processed/cards.json`，默认评估用例是 `tests/fixtures/regression.json`。任一预期结果没有出现在对应 `max_rank` 内时，命令会以非零状态退出。
+
 导出稳定的索引文档。
 
 ```bash

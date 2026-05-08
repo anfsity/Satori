@@ -15,9 +15,10 @@ use lancedb::{
     index::Index,
 };
 use satori_core::{
-    IndexDocument, JargonCard, LanceDbDocument, build_index_documents, build_lancedb_documents,
-    load_cards_from_reader, validate_cards,
+    IndexDocument, JargonCard, LanceDbDocument, SearchIndex, build_index_documents,
+    build_lancedb_documents, load_cards_from_reader, validate_cards,
 };
+use serde::Deserialize;
 use std::{
     collections::HashSet,
     env,
@@ -28,6 +29,7 @@ use std::{
 };
 
 const DEFAULT_CARDS_PATH: &str = "data/processed/cards.json";
+const DEFAULT_EVALUATION_CASES_PATH: &str = "tests/fixtures/regression.json";
 const DEFAULT_INDEX_DOCS_PATH: &str = "data/processed/index_docs.jsonl";
 const DEFAULT_LANCEDB_PATH: &str = "data/processed/lancedb";
 const DEFAULT_LANCEDB_TABLE: &str = "index_documents";
@@ -43,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
         Some("import-mcsrainbow") => import_mcsrainbow(&args[1..]),
         Some("export-index-docs") => export_index_docs_command(&args[1..]),
         Some("build-lancedb-index") => build_lancedb_index_command(&args[1..]).await,
+        Some("evaluate-search") => evaluate_search_command(&args[1..]),
         Some("validate") => validate_command(args.get(1).map(String::as_str)),
         Some(path) if Path::new(path).exists() => validate_command(Some(path)),
         Some(command) => bail!("unrecognized command or missing file: {command}"),
@@ -135,10 +138,45 @@ async fn build_lancedb_index_command(args: &[String]) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn evaluate_search_command(args: &[String]) -> anyhow::Result<()> {
+    let cards_path = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_CARDS_PATH);
+    let cases_path = args
+        .get(1)
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_EVALUATION_CASES_PATH);
+    let cards = load_cards(cards_path)?;
+    let cases = load_evaluation_cases(cases_path)?;
+    let report = evaluate_keyword_search(cards, &cases)?;
+
+    print_evaluation_report(&report);
+
+    ensure!(
+        report.failed_count() == 0,
+        "retrieval evaluation failed: {} of {} case(s) missed",
+        report.failed_count(),
+        report.total_count()
+    );
+
+    Ok(())
+}
+
 fn load_cards(path: &str) -> anyhow::Result<Vec<JargonCard>> {
     let cards_file = File::open(path).with_context(|| format!("failed to open {path}"))?;
     load_cards_from_reader(cards_file)
         .with_context(|| format!("failed to load jargon cards from {path}"))
+}
+
+fn load_evaluation_cases(path: &str) -> anyhow::Result<Vec<RetrievalEvaluationCase>> {
+    let file = File::open(path).with_context(|| format!("failed to open {path}"))?;
+    let cases: Vec<RetrievalEvaluationCase> = serde_json::from_reader(file)
+        .with_context(|| format!("failed to load retrieval evaluation cases from {path}"))?;
+
+    validate_evaluation_cases(&cases)?;
+
+    Ok(cases)
 }
 
 fn load_index_documents(path: &str) -> anyhow::Result<Vec<IndexDocument>> {
@@ -162,6 +200,127 @@ fn load_index_documents(path: &str) -> anyhow::Result<Vec<IndexDocument>> {
 
     ensure!(!documents.is_empty(), "index document collection is empty");
     Ok(documents)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct RetrievalEvaluationCase {
+    query: String,
+    expected_id: String,
+    max_rank: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RetrievalEvaluationResult {
+    query: String,
+    expected_id: String,
+    max_rank: usize,
+    actual_rank: Option<usize>,
+    top_ids: Vec<String>,
+}
+
+impl RetrievalEvaluationResult {
+    fn passed(&self) -> bool {
+        self.actual_rank.is_some_and(|rank| rank <= self.max_rank)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RetrievalEvaluationReport {
+    results: Vec<RetrievalEvaluationResult>,
+}
+
+impl RetrievalEvaluationReport {
+    fn total_count(&self) -> usize {
+        self.results.len()
+    }
+
+    fn passed_count(&self) -> usize {
+        self.results.iter().filter(|result| result.passed()).count()
+    }
+
+    fn failed_count(&self) -> usize {
+        self.total_count() - self.passed_count()
+    }
+}
+
+fn validate_evaluation_cases(cases: &[RetrievalEvaluationCase]) -> anyhow::Result<()> {
+    ensure!(
+        !cases.is_empty(),
+        "retrieval evaluation case collection is empty"
+    );
+
+    for (index, case) in cases.iter().enumerate() {
+        let case_number = index + 1;
+
+        ensure!(
+            !case.query.trim().is_empty(),
+            "retrieval evaluation case {case_number} has an empty query"
+        );
+        ensure!(
+            !case.expected_id.trim().is_empty(),
+            "retrieval evaluation case {case_number} has an empty expected_id"
+        );
+        ensure!(
+            case.max_rank > 0,
+            "retrieval evaluation case {case_number} has max_rank below 1"
+        );
+    }
+
+    Ok(())
+}
+
+fn evaluate_keyword_search(
+    cards: Vec<JargonCard>,
+    cases: &[RetrievalEvaluationCase],
+) -> anyhow::Result<RetrievalEvaluationReport> {
+    validate_evaluation_cases(cases)?;
+    let index = SearchIndex::new(cards).context("failed to build search index")?;
+    let results = cases
+        .iter()
+        .map(|case| {
+            let search_results = index.search(&case.query, case.max_rank);
+            let top_ids = search_results
+                .iter()
+                .map(|result| result.id.clone())
+                .collect::<Vec<_>>();
+            let actual_rank = top_ids
+                .iter()
+                .position(|id| id == &case.expected_id)
+                .map(|index| index + 1);
+
+            RetrievalEvaluationResult {
+                query: case.query.clone(),
+                expected_id: case.expected_id.clone(),
+                max_rank: case.max_rank,
+                actual_rank,
+                top_ids,
+            }
+        })
+        .collect();
+
+    Ok(RetrievalEvaluationReport { results })
+}
+
+fn print_evaluation_report(report: &RetrievalEvaluationReport) {
+    for result in &report.results {
+        let status = if result.passed() { "pass" } else { "fail" };
+        let actual_rank = result
+            .actual_rank
+            .map(|rank| rank.to_string())
+            .unwrap_or_else(|| "miss".to_owned());
+
+        println!(
+            "status={status} query={:?} expected_id={} max_rank={} actual_rank={} top_ids={:?}",
+            result.query, result.expected_id, result.max_rank, actual_rank, result.top_ids
+        );
+    }
+
+    println!(
+        "summary: {} passed, {} failed, {} total",
+        report.passed_count(),
+        report.failed_count(),
+        report.total_count()
+    );
 }
 
 trait TextEmbedder {
@@ -744,6 +903,62 @@ mod tests {
         assert_eq!(lancedb_documents[0].id, documents[0].id);
         assert_eq!(lancedb_documents[0].vector.len(), 4);
         assert_eq!(lancedb_documents[0].tags_json, r#"["职场","会议","协作"]"#);
+    }
+
+    #[test]
+    fn evaluate_keyword_search_reports_expected_rank() {
+        let cards =
+            load_cards_from_reader(include_str!("../../../tests/fixtures/cards.json").as_bytes())
+                .unwrap();
+        let cases = vec![RetrievalEvaluationCase {
+            query: "大家先统一想法".to_owned(),
+            expected_id: "jargon_lar_tong_dui_qi".to_owned(),
+            max_rank: 1,
+        }];
+
+        let report = evaluate_keyword_search(cards, &cases).unwrap();
+
+        assert_eq!(report.total_count(), 1);
+        assert_eq!(report.passed_count(), 1);
+        assert_eq!(report.failed_count(), 0);
+        assert_eq!(report.results[0].actual_rank, Some(1));
+        assert_eq!(
+            report.results[0].top_ids,
+            vec!["jargon_lar_tong_dui_qi".to_owned()]
+        );
+    }
+
+    #[test]
+    fn evaluate_keyword_search_records_missed_expected_id() {
+        let cards =
+            load_cards_from_reader(include_str!("../../../tests/fixtures/cards.json").as_bytes())
+                .unwrap();
+        let cases = vec![RetrievalEvaluationCase {
+            query: "大家先统一想法".to_owned(),
+            expected_id: "missing_card".to_owned(),
+            max_rank: 1,
+        }];
+
+        let report = evaluate_keyword_search(cards, &cases).unwrap();
+
+        assert_eq!(report.passed_count(), 0);
+        assert_eq!(report.failed_count(), 1);
+        assert_eq!(report.results[0].actual_rank, None);
+    }
+
+    #[test]
+    fn evaluate_keyword_search_rejects_empty_cases() {
+        let cards =
+            load_cards_from_reader(include_str!("../../../tests/fixtures/cards.json").as_bytes())
+                .unwrap();
+
+        let error = evaluate_keyword_search(cards, &[]).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("retrieval evaluation case collection is empty")
+        );
     }
 
     #[tokio::test]
