@@ -152,6 +152,19 @@ cargo run -p satori-api
 SATORI_CARDS_PATH=tests/fixtures/cards.json cargo run -p satori-api
 ```
 
+默认情况下，搜索 API 使用启动时从卡片构建的内存关键词索引。
+
+如果已经构建了本地 LanceDB 表，可以让 API 查询该表。
+
+```bash
+SATORI_LANCEDB_PATH=data/processed/lancedb cargo run -p satori-api
+```
+
+可选环境变量：
+
+- `SATORI_LANCEDB_TABLE`：默认 `index_documents`
+- `SATORI_EMBEDDING_MODEL`：默认 `paraphrase-multilingual-MiniLM-L12-v2`
+
 也可以让校验命令读取指定文件。
 
 ```bash
@@ -182,9 +195,13 @@ cargo run -p satori-indexer -- build-lancedb-index
 
 默认表名是 `index_documents`。
 
-默认嵌入模型是 `BAAI/bge-small-zh-v1.5`。
+默认嵌入模型是 `paraphrase-multilingual-MiniLM-L12-v2`。
+
+`BAAI/bge-small-zh-v1.5` 更适合中文检索，但当前 LanceDB Rust 的 sentence-transformers 封装会把模型名固定解析到 `sentence-transformers/<model>` 命名空间，不能直接加载 `BAAI/bge-small-zh-v1.5`。因此当前先使用 LanceDB 可直接加载的多语言模型打通本地向量检索链路。
 
 当前语料很小时会先写入表；向量索引会在语料规模足够后再创建。
+
+`data/processed/index_docs.jsonl` 和 `data/processed/lancedb/` 是本地生成产物，不提交到仓库。
 
 检查健康状态。
 
@@ -211,7 +228,7 @@ tests/
   fixtures/
 ```
 
-`crates/api` 提供 HTTP 接口。
+`crates/api` 提供 HTTP 接口。默认使用内存关键词检索；配置 `SATORI_LANCEDB_PATH` 后会使用本地 LanceDB 表进行查询，并保持 `/api/search` 响应结构不变。
 
 `crates/core` 提供检索卡片、搜索结果和基础排序逻辑。
 
@@ -230,4 +247,6 @@ tests/
 
 ## 当前状态
 
-项目处于早期开发阶段。
+项目已经超过中期原型阶段，当前后端可以运行本地检索 API、执行数据校验、导出索引文档，并构建本地 LanceDB 表。
+
+当前 `/api/search` 默认使用内存关键词排序；配置本地 LanceDB 后可以走向量检索路径。

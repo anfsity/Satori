@@ -10,3 +10,5 @@ target/
 data/index/
 data/raw/
 data/processed/imported/
+data/processed/index_docs.jsonl
+data/processed/lancedb/

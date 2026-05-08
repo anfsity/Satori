@@ -31,7 +31,7 @@ const DEFAULT_CARDS_PATH: &str = "data/processed/cards.json";
 const DEFAULT_INDEX_DOCS_PATH: &str = "data/processed/index_docs.jsonl";
 const DEFAULT_LANCEDB_PATH: &str = "data/processed/lancedb";
 const DEFAULT_LANCEDB_TABLE: &str = "index_documents";
-const DEFAULT_EMBEDDING_MODEL: &str = "BAAI/bge-small-zh-v1.5";
+const DEFAULT_EMBEDDING_MODEL: &str = "paraphrase-multilingual-MiniLM-L12-v2";
 const DEFAULT_SOURCE: &str = "mcsrainbow/chinese-internet-jargon";
 const MIN_VECTOR_INDEX_ROWS: usize = 256;
 

@@ -16,6 +16,7 @@ anyhow = "1.0.100"
 arrow-array = "57.2.0"
 arrow-schema = "57.2.0"
 axum = "0.8.7"
+futures-util = "0.3.31"
 lancedb = { version = "0.27.2", features = ["sentence-transformers"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
