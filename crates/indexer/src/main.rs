@@ -186,20 +186,24 @@ impl SentenceTransformerEmbedder {
 
 impl TextEmbedder for SentenceTransformerEmbedder {
     fn embed_texts(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
-        let embeddings = self
-            .model
-            .compute_source_embeddings(Arc::new(StringArray::from(texts.to_vec())))
-            .context("failed to compute source embeddings")?;
-        let vectors = embeddings_to_vectors(&embeddings)?;
+        texts
+            .iter()
+            .map(|text| {
+                let embeddings = self
+                    .model
+                    .compute_source_embeddings(Arc::new(StringArray::from(vec![text.clone()])))
+                    .context("failed to compute source embedding")?;
+                let mut vectors = embeddings_to_vectors(&embeddings)?;
 
-        ensure!(
-            vectors.len() == texts.len(),
-            "embedding count mismatch: {} text(s) but {} vector(s)",
-            texts.len(),
-            vectors.len()
-        );
+                ensure!(
+                    vectors.len() == 1,
+                    "embedding count mismatch: expected 1 vector, got {}",
+                    vectors.len()
+                );
 
-        Ok(vectors)
+                Ok(vectors.remove(0))
+            })
+            .collect()
     }
 }
 

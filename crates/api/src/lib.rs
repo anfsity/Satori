@@ -220,10 +220,15 @@ fn vector_matches_from_batch(batch: &RecordBatch) -> anyhow::Result<Vec<VectorMa
 }
 
 fn query_embedding_to_vector(embeddings: &ArrayRef) -> anyhow::Result<Vec<f32>> {
+    if let Some(values) = embeddings.as_any().downcast_ref::<Float32Array>() {
+        ensure!(!values.is_empty(), "query embedding is empty");
+        return Ok((0..values.len()).map(|index| values.value(index)).collect());
+    }
+
     let list_array = embeddings
         .as_any()
         .downcast_ref::<FixedSizeListArray>()
-        .context("expected fixed-size-list query embedding array")?;
+        .context("expected Float32 or fixed-size-list query embedding array")?;
 
     ensure!(
         list_array.len() == 1,
@@ -560,6 +565,15 @@ mod tests {
                     3,
                 ),
             );
+
+        let vector = query_embedding_to_vector(&embeddings).unwrap();
+
+        assert_eq!(vector, vec![0.25, 0.5, 0.75]);
+    }
+
+    #[test]
+    fn query_embedding_to_vector_reads_flat_query_values() {
+        let embeddings: ArrayRef = Arc::new(Float32Array::from(vec![0.25, 0.5, 0.75]));
 
         let vector = query_embedding_to_vector(&embeddings).unwrap();
 
