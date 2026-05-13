@@ -1,0 +1,102 @@
+[
+  {
+    "query": "赋能",
+    "expected_id": "jargon_mcsrainbow_092959dd598d9c75",
+    "max_rank": 1
+  },
+  {
+    "query": "提供必要资源或能力以增强能力",
+    "expected_id": "jargon_mcsrainbow_092959dd598d9c75",
+    "max_rank": 1
+  },
+  {
+    "query": "抓手",
+    "expected_id": "jargon_mcsrainbow_de87380e4d6a4ff8",
+    "max_rank": 1
+  },
+  {
+    "query": "找到一个切入点或方法来解决问题",
+    "expected_id": "jargon_mcsrainbow_de87380e4d6a4ff8",
+    "max_rank": 1
+  },
+  {
+    "query": "闭环",
+    "expected_id": "jargon_mcsrainbow_9789c10f6d58a8e6",
+    "max_rank": 1
+  },
+  {
+    "query": "形成一个完整的处理流程，没有遗漏",
+    "expected_id": "jargon_mcsrainbow_9789c10f6d58a8e6",
+    "max_rank": 1
+  },
+  {
+    "query": "落地",
+    "expected_id": "jargon_mcsrainbow_6db6b7bdcb1c47d3",
+    "max_rank": 1
+  },
+  {
+    "query": "将理论或计划具体实施并执行",
+    "expected_id": "jargon_mcsrainbow_6db6b7bdcb1c47d3",
+    "max_rank": 1
+  },
+  {
+    "query": "沉淀",
+    "expected_id": "jargon_mcsrainbow_5f6fef0e5c30e4e5",
+    "max_rank": 1
+  },
+  {
+    "query": "积累并保存知识、经验等",
+    "expected_id": "jargon_mcsrainbow_5f6fef0e5c30e4e5",
+    "max_rank": 1
+  },
+  {
+    "query": "复盘",
+    "expected_id": "jargon_mcsrainbow_eacaa3d9c2a862a7",
+    "max_rank": 1
+  },
+  {
+    "query": "回顾并分析过去的行动或项目",
+    "expected_id": "jargon_mcsrainbow_eacaa3d9c2a862a7",
+    "max_rank": 1
+  },
+  {
+    "query": "踩坑",
+    "expected_id": "jargon_mcsrainbow_f964da886fba9a39",
+    "max_rank": 1
+  },
+  {
+    "query": "遇到预料之外的问题",
+    "expected_id": "jargon_mcsrainbow_f964da886fba9a39",
+    "max_rank": 1
+  },
+  {
+    "query": "颗粒度",
+    "expected_id": "jargon_mcsrainbow_f6be6f97b089a947",
+    "max_rank": 1
+  },
+  {
+    "query": "信息、管理或控制的细致程度",
+    "expected_id": "jargon_mcsrainbow_f6be6f97b089a947",
+    "max_rank": 1
+  },
+  {
+    "query": "护城河",
+    "expected_id": "jargon_mcsrainbow_2851f6b0deb7fb68",
+    "max_rank": 1
+  },
+  {
+    "query": "保护企业免受竞争侵蚀的独特优势",
+    "expected_id": "jargon_mcsrainbow_2851f6b0deb7fb68",
+    "max_rank": 1
+  },
+  {
+    "query": "痛点",
+    "expected_id": "jargon_mcsrainbow_43c0eea96dadf97c",
+    "max_rank": 1
+  },
+  {
+    "query": "用户或客户的具体需求或问题",
+    "expected_id": "jargon_mcsrainbow_43c0eea96dadf97c",
+    "max_rank": 1
+  }
+]
