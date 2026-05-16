@@ -535,19 +535,40 @@ fn keyword_score_with_text(
         return 0.95;
     }
 
-    if query.chars().nth(1).is_some() && searchable_text.contains(query) {
+    let query_len = query.chars().count();
+
+    if query_len >= 2 && card.term.contains(query) {
+        return 0.9;
+    }
+
+    if query_len >= 3 && card.plain.contains(query) {
+        return 0.85;
+    }
+
+    if query_len >= 3
+        && card
+            .queries
+            .iter()
+            .any(|candidate| candidate.contains(query))
+    {
+        return 0.85;
+    }
+
+    if query_len >= 3 && searchable_text.contains(query) {
         return 0.75;
     }
 
-    let fallback_score = fallback_score(
-        query_chars,
-        query_bigrams,
-        searchable_chars,
-        searchable_bigrams,
-    );
+    if query_len >= 3 {
+        let fallback_score = fallback_score(
+            query_chars,
+            query_bigrams,
+            searchable_chars,
+            searchable_bigrams,
+        );
 
-    if fallback_score > 0.0 {
-        return fallback_score;
+        if fallback_score > 0.0 {
+            return fallback_score;
+        }
     }
 
     0.0
@@ -768,6 +789,28 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "jargon_lar_tong_dui_qi");
         assert_eq!(results[0].score, 0.95);
+    }
+
+    #[test]
+    fn search_index_prefers_term_substring_over_explanation_substring() {
+        let mut cards = fixture_cards();
+        cards.push(JargonCard {
+            id: "long_explanation_match".to_owned(),
+            term: "科学上网".to_owned(),
+            plain: "访问被封锁的网站".to_owned(),
+            explanation: "通过技术方式突破防火长城。".to_owned(),
+            examples: Vec::new(),
+            queries: Vec::new(),
+            tags: vec!["external".to_owned()],
+            source: "test".to_owned(),
+            verified: false,
+        });
+        let index = SearchIndex::new(cards).unwrap();
+        let results = index.search("破防", 2);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "meme_po_fang_le");
+        assert_eq!(results[0].score, 0.9);
     }
 
     #[test]

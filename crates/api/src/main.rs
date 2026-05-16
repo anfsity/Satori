@@ -7,18 +7,15 @@ use tokio::net::TcpListener;
 const DEFAULT_CARDS_PATH: &str = "data/processed/cards.json";
 const DEFAULT_LANCEDB_TABLE: &str = "index_documents";
 const DEFAULT_EMBEDDING_MODEL: &str = "paraphrase-multilingual-MiniLM-L12-v2";
+const DEFAULT_ADDRESS: &str = "127.0.0.1:3000";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let address = "127.0.0.1:3000";
-    let cards_path =
-        env::var("SATORI_CARDS_PATH").unwrap_or_else(|_| DEFAULT_CARDS_PATH.to_owned());
-    let cards_file =
-        File::open(&cards_path).with_context(|| format!("failed to open {cards_path}"))?;
-    let cards = load_cards_from_reader(cards_file)
-        .with_context(|| format!("failed to load jargon cards from {cards_path}"))?;
+    let address = env::var("SATORI_API_ADDR").unwrap_or_else(|_| DEFAULT_ADDRESS.to_owned());
+    let card_paths = card_paths();
+    let cards = load_cards_from_paths(&card_paths)?;
     let state = app_state(cards).await?;
-    let listener = TcpListener::bind(address)
+    let listener = TcpListener::bind(&address)
         .await
         .with_context(|| format!("failed to bind {address}"))?;
 
@@ -27,6 +24,32 @@ async fn main() -> anyhow::Result<()> {
         .context("api server failed")?;
 
     Ok(())
+}
+
+fn card_paths() -> Vec<String> {
+    if let Some(paths) = optional_env("SATORI_CARDS_PATHS") {
+        return paths
+            .split(':')
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned)
+            .collect();
+    }
+
+    vec![env::var("SATORI_CARDS_PATH").unwrap_or_else(|_| DEFAULT_CARDS_PATH.to_owned())]
+}
+
+fn load_cards_from_paths(paths: &[String]) -> anyhow::Result<Vec<JargonCard>> {
+    let mut cards = Vec::new();
+
+    for path in paths {
+        let cards_file = File::open(path).with_context(|| format!("failed to open {path}"))?;
+        let mut loaded_cards = load_cards_from_reader(cards_file)
+            .with_context(|| format!("failed to load jargon cards from {path}"))?;
+        cards.append(&mut loaded_cards);
+    }
+
+    Ok(cards)
 }
 
 async fn app_state(cards: Vec<JargonCard>) -> anyhow::Result<AppState> {
