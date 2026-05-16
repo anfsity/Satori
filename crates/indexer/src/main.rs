@@ -36,6 +36,7 @@ const DEFAULT_LANCEDB_TABLE: &str = "index_documents";
 const DEFAULT_EMBEDDING_MODEL: &str = "paraphrase-multilingual-MiniLM-L12-v2";
 const DEFAULT_SOURCE: &str = "mcsrainbow/chinese-internet-jargon";
 const MIN_VECTOR_INDEX_ROWS: usize = 256;
+const EMBEDDING_PROGRESS_INTERVAL: usize = 50;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -126,7 +127,13 @@ async fn build_lancedb_index_command(args: &[String]) -> anyhow::Result<()> {
         .map(String::as_str)
         .unwrap_or(DEFAULT_EMBEDDING_MODEL);
     let documents = load_index_documents(input_path)?;
+    println!(
+        "loaded {} index document(s) from {input_path}",
+        documents.len()
+    );
+    println!("loading embedding model {model_name}");
     let embedder = SentenceTransformerEmbedder::new(model_name)?;
+    println!("embedding model loaded");
     let lancedb_documents = vectorize_documents(&documents, &embedder)?;
 
     write_lancedb_table(db_path, table_name, &lancedb_documents).await?;
@@ -345,9 +352,15 @@ impl SentenceTransformerEmbedder {
 
 impl TextEmbedder for SentenceTransformerEmbedder {
     fn embed_texts(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let total = texts.len();
         texts
             .iter()
-            .map(|text| {
+            .enumerate()
+            .map(|(index, text)| {
+                let current = index + 1;
+                if current == 1 || current == total || current % EMBEDDING_PROGRESS_INTERVAL == 0 {
+                    println!("embedding document {current}/{total}");
+                }
                 let embeddings = self
                     .model
                     .compute_source_embeddings(Arc::new(StringArray::from(vec![text.clone()])))
@@ -423,6 +436,10 @@ async fn write_lancedb_table(
         .execute()
         .await
         .with_context(|| format!("failed to connect to LanceDB at {db_path}"))?;
+    println!(
+        "writing {} LanceDB document(s) into {db_path}/{table_name}",
+        documents.len()
+    );
     let table = database
         .create_table(table_name, batch)
         .mode(CreateTableMode::Overwrite)
@@ -431,9 +448,14 @@ async fn write_lancedb_table(
         .with_context(|| format!("failed to create LanceDB table {table_name}"))?;
 
     if documents.len() < MIN_VECTOR_INDEX_ROWS {
+        println!(
+            "skipping vector index creation because {} document(s) is below the {MIN_VECTOR_INDEX_ROWS} row threshold",
+            documents.len()
+        );
         return Ok(());
     }
 
+    println!("creating vector index for {table_name}");
     table
         .create_index(&["vector"], Index::Auto)
         .execute()
