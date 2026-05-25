@@ -1,14 +1,13 @@
+> 本项目基本属于 vibe 产物
+
 # Satori
 
-[![status](https://img.shields.io/badge/status-early%20development-blue)](https://github.com/anfsity/Satori)
 [![backend](https://img.shields.io/badge/backend-Rust-orange)](https://www.rust-lang.org/)
 [![api](https://img.shields.io/badge/api-Axum-green)](https://github.com/tokio-rs/axum)
 
 Satori 是一个中文黑话和网络梗语义搜索项目。
 
 它把“人话”和“黑话”放到同一个检索空间里。用户输入一句普通表达，系统返回意思接近的黑话、网络梗、解释和例句。用户输入黑话时，也可以查到它对应的正常说法。
-
-项目地址是 [github.com/anfsity/Satori](https://github.com/anfsity/Satori)。
 
 ## 核心能力
 
@@ -252,9 +251,3 @@ tests/
 4. 基于非空白字符和双字片段重叠的低权重兜底匹配。
 
 低信号重叠不会返回结果，因此不存在有效匹配时会返回空数组。
-
-## 当前状态
-
-项目已经超过中期原型阶段，当前后端可以运行本地检索 API、执行数据校验、导出索引文档、构建本地 LanceDB 表，并运行固定用例检索评估。
-
-当前 `/api/search` 默认使用内存关键词排序；配置本地 LanceDB 后可以走向量检索路径。
